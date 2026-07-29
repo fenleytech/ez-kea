@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}DHCPv4 Pools - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="network"></i> DHCPv4 Pools Management</h1>
+  <div style="display:flex;gap:.5rem;">
+    <a href="{{ url_for('main.dhcp4.new_subnet') }}" class="btn btn-outline">
+      <i data-lucide="plus-circle"></i> Add Standalone Subnet
+    </a>
+    <a href="{{ url_for('main.dhcp4.new_shared_network') }}" class="btn btn-primary" title="Group multiple subnets that share the same physical wire/VLAN.">
+      <i data-lucide="plus"></i> New Shared Network
+    </a>
+  </div>
+</div>
+<p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: -1rem; margin-bottom: 2rem;">
+  <i data-lucide="info" style="width: 16px; height: 16px; display: inline-block; vertical-align: middle;"></i> 
+  <strong>Standalone Subnets</strong> are standard networks mapped to a single interface. 
+  <strong>Shared Networks</strong> group multiple subnets together if they exist on the same physical link. If you are unsure, just add a Standalone Subnet.
+</p>
+
+{% set dhcp_version = "4" %}
+{% include 'config_buttons.html' %}
+
+{% for network in shared_networks %}
+<div class="card">
+  <div class="card-header" style="background-color: rgba(27, 161, 216, 0.1);">
+    <h2><i data-lucide="folder-kanban"></i> Shared Network: {{ network.name }}</h2>
+    <form action="{{ url_for('main.dhcp4.delete_shared_network') }}" method="POST" class="d-inline"
+      onsubmit="return confirm('WARNING: Are you sure you want to delete this shared network and all of its subnets?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="shared-network-name" value="{{ network.name }}">
+      <button type="submit" class="btn btn-danger btn-sm">
+        <i data-lucide="trash-2"></i> Delete Group
+      </button>
+    </form>
+  </div>
+  <div class="card-body">
+
+    <div style="margin-bottom: 1.5rem; display: flex; justify-content: flex-end;">
+      <form action="{{ url_for('main.dhcp4.new_subnet') }}" method="GET" class="d-inline">
+        <input type="hidden" name="shared_network_name" value="{{ network.name }}">
+        <button type="submit" class="btn btn-outline btn-sm">
+          <i data-lucide="plus-circle"></i> Add Subnet To Group
+        </button>
+      </form>
+    </div>
+
+    {% if network.subnet4 %}
+    {% for subnet in network.subnet4 %}
+    <div class="card" style="background-color: rgba(0, 0, 0, 0.3); border-color: rgba(255, 255, 255, 0.05);">
+      <div class="card-header" style="background: transparent;">
+        <h3><i data-lucide="layout-grid"></i> Subnet: {{ subnet.subnet }}</h3>
+        <form action="{{ url_for('main.dhcp4.delete_subnet') }}" method="POST" class="d-inline"
+          onsubmit="return confirm('Are you sure you want to delete this subnet?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="shared-network-name" value="{{ network.name }}">
+          <input type="hidden" name="subnet" value="{{ subnet.subnet }}">
+          <button type="submit" class="btn btn-danger btn-sm" title="Delete Subnet">
+            <i data-lucide="trash"></i>
+          </button>
+        </form>
+      </div>
+      <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+          <div>
+            <span class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+              Router
+              <a href="{{ url_for('main.options.manage_subnet4_options', shared_network_name=network.name, subnet=subnet.subnet) }}"
+                class="btn btn-outline" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                <i data-lucide="settings-2" style="width: 14px; height: 14px;"></i> Manage Options
+              </a>
+            </span>
+            {% for option in subnet.get('option-data', []) %}
+            {% if option.name == 'routers' %}
+            <span class="badge badge-success">{{ option.data }}</span>
+            {% endif %}
+            {% endfor %}
+            {% if not subnet.get('option-data') %}
+            <span class="text-secondary" style="font-size: 0.875rem;">None configured</span>
+            {% endif %}
+          </div>
+
+          <div>
+            <span class="form-label">Pool</span>
+            {% if subnet.pools %}
+            {% for pool in subnet.pools %}
+            <span class="badge badge-success"
+              style="background-color: rgba(27, 161, 216, 0.1); color: var(--primary-blue); border-color: rgba(27, 161, 216, 0.2);">
+              {{ pool.pool }}
+            </span>
+            {% endfor %}
+            {% else %}
+            <span class="badge"
+              style="background-color: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);">Static
+              Only</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+      <i data-lucide="inbox" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 1rem;"></i>
+      <p>No subnets configured in this shared network.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{% if not shared_networks and not standalone_subnets %}
+<div class="card">
+  <div class="card-body" style="text-align: center; padding: 4rem 2rem;">
+    <i data-lucide="network"
+      style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
+    <h2>No Subnets Configured</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 2rem;">Add a standalone subnet directly, or create a shared-network group to hold multiple subnets.</p>
+    <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
+      <a href="{{ url_for('main.dhcp4.new_subnet') }}" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 1.1rem;">
+        <i data-lucide="plus-circle" style="width: 20px; height: 20px;"></i> Add Standalone Subnet (Recommended)
+      </a>
+      <a href="{{ url_for('main.dhcp4.new_shared_network') }}" class="btn btn-outline" style="padding: 0.75rem 1.5rem; font-size: 1.1rem;">
+        <i data-lucide="folder-kanban" style="width: 20px; height: 20px;"></i> Create Shared Network (Advanced)
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if standalone_subnets %}
+<div class="card" style="margin-top:1.5rem;">
+  <div class="card-header" style="background-color: rgba(245,158,11,0.08);">
+    <h2><i data-lucide="layout-grid"></i> Standalone Subnets</h2>
+    <a href="{{ url_for('main.dhcp4.new_subnet') }}" class="btn btn-outline btn-sm">
+      <i data-lucide="plus-circle"></i> Add
+    </a>
+  </div>
+  <div class="card-body">
+    {% for subnet in standalone_subnets %}
+    <div class="card" style="background-color:rgba(0, 0, 0,.3);border-color:rgba(255, 255, 255,.05);margin-bottom:1rem;">
+      <div class="card-header" style="background:transparent;">
+        <h3><i data-lucide="layout-grid"></i> {{ subnet.subnet }}</h3>
+        <div style="display:flex;gap:.5rem;">
+          <a href="{{ url_for('main.options.manage_standalone_subnet4_options', subnet=subnet.subnet) }}"
+            class="btn btn-outline btn-sm"><i data-lucide="settings-2" style="width:14px;height:14px;"></i> Manage Options</a>
+          <form action="{{ url_for('main.dhcp4.delete_subnet') }}" method="POST" class="d-inline"
+            onsubmit="return confirm('Delete this subnet?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="shared-network-name" value="">
+            <input type="hidden" name="subnet" value="{{ subnet.subnet }}">
+            <button type="submit" class="btn btn-danger btn-sm" title="Delete Subnet" aria-label="Delete Subnet"><i data-lucide="trash"></i></button>
+          </form>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;">
+          <div>
+            <span class="form-label">Router</span>
+            {% for opt in subnet.get('option-data', []) %}{% if opt.name == 'routers' %}
+            <span class="badge badge-success">{{ opt.data }}</span>
+            {% endif %}{% endfor %}
+          </div>
+          <div>
+            <span class="form-label">Pool</span>
+            {% if subnet.pools %}{% for p in subnet.pools %}
+            <span class="badge" style="background:rgba(27, 161, 216,.1);color:var(--primary-blue);">{{ p.pool }}</span>
+            {% endfor %}{% else %}
+            <span class="badge" style="background:rgba(255, 255, 255,.1);">Static Only</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

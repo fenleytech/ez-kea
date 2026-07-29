@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}New MAC Reservation - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="plus-circle"></i> Add MAC Reservation</h1>
+  <a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="btn btn-outline">
+    <i data-lucide="arrow-left"></i> Back to Reservations
+  </a>
+</div>
+
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+  <div class="card-header">
+    <h2>Reservation Details</h2>
+  </div>
+  <div class="card-body">
+    {% if errors %}
+    <div class="alert alert-danger">
+      <ul style="margin: 0; padding-left: 1.5rem;">
+        {% for error in errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <form action="{{ url_for('main.dhcp4.new_reservation') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label for="subnet" class="form-label">Select Subnet <span style="color: var(--danger-red);">*</span></label>
+        <select class="form-control" id="subnet" name="subnet" required>
+          <option value="" disabled selected>-- Select a Subnet --</option>
+          {% for subnet, ips in subnet_data.items() %}
+          <option value="{{ subnet }}">{{ subnet }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="ip-address" class="form-label">Available IP Address <span
+            style="color: var(--danger-red);">*</span></label>
+        <select class="form-control" id="ip-address" name="ip-address" required disabled>
+          <option value="" disabled selected>-- Select an IP --</option>
+        </select>
+      </div>
+
+      <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+        <div class="form-group">
+          <label for="mac-address" class="form-label">Hardware Address (MAC) <span
+              style="color: var(--danger-red);">*</span></label>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <i data-lucide="hash" style="color: var(--text-secondary); width: 16px; height: 16px;"></i>
+            <input type="text" class="form-control" id="mac-address" name="mac-address" placeholder="00:1A:2B:3C:4D:5E"
+              required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="hostname" class="form-label">Hostname <span style="color: var(--danger-red);">*</span></label>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <i data-lucide="monitor" style="color: var(--text-secondary); width: 16px; height: 16px;"></i>
+            <input type="text" class="form-control" id="hostname" name="hostname" placeholder="e.g. webserver-01"
+              required>
+          </div>
+        </div>
+      </div>
+
+      <hr style="border-color: var(--card-border); margin: 2rem 0;">
+
+      <div style="display: flex; justify-content: flex-end;">
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="check"></i> Create Reservation
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const subnetData = {{ subnet_data | tojson | safe
+  }};
+  const subnetSelect = document.getElementById("subnet");
+  const ipAddressSelect = document.getElementById("ip-address");
+
+  subnetSelect.addEventListener("change", function () {
+    const selectedSubnet = this.value;
+    ipAddressSelect.innerHTML = '<option value="" disabled selected>-- Select an IP --</option>'; // Clear existing options
+
+    if (selectedSubnet && subnetData[selectedSubnet]) {
+      subnetData[selectedSubnet].forEach(function (ip) {
+        const option = document.createElement("option");
+        option.value = ip;
+        option.textContent = ip;
+        ipAddressSelect.appendChild(option);
+      });
+      ipAddressSelect.disabled = false;
+    } else {
+      ipAddressSelect.disabled = true;
+    }
+  });
+    });
+</script>
+{% endblock %}

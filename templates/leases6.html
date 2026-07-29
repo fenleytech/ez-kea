@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}IPv6 Leases - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i data-lucide="list"></i> Active IPv6 Leases</h1>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2><i data-lucide="activity"></i> Current Leases</h2>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        {% if leases %}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Address / Prefix</th>
+                        <th>DUID</th>
+                        <th>Hostname</th>
+                        <th>Expiration Time</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lease in leases %}
+                    <tr>
+                        <td>
+                            {% if lease.lease_type == 'IA_PD' %}
+                            <span class="badge badge-success" style="background-color: rgba(16, 185, 129, 0.1); color: var(--success-green); border-color: rgba(16, 185, 129, 0.2);">Prefix (IA_PD)</span>
+                            {% elif lease.lease_type == 'IA_TA' %}
+                            <span class="badge" style="background-color: rgba(255, 255, 255, 0.1);">Temporary (IA_TA)</span>
+                            {% else %}
+                            <span class="badge badge-info" style="background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">Address (IA_NA)</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-family: monospace; font-size: 1.1em; color: var(--success-green);">
+                            {{ lease.address }}{% if lease.lease_type == 'IA_PD' and lease.prefix_len %}/{{ lease.prefix_len }}{% endif %}
+                        </td>
+                        <td style="font-family: monospace;">{{ lease.duid }}</td>
+                        <td>
+                            {% if lease.hostname %}
+                            <span class="badge badge-success"
+                                style="background-color: rgba(27, 161, 216, 0.1); color: var(--primary-blue);">{{
+                                lease.hostname }}</span>
+                            {% else %}
+                            <span class="text-secondary">Unknown</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ lease.expiration_time }}</td>
+                        <td><span class="badge badge-success">Active</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 4rem 2rem;">
+            <i data-lucide="file-warning"
+                style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
+            <h2>No Active Leases</h2>
+            <p style="color: var(--text-secondary);">There are currently no active DHCPv6 leases in the database.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

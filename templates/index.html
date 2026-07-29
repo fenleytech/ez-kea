@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Home - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="server" class="feature-icon"></i> Welcome to EZ-Kea</h1>
+</div>
+
+{% include 'config_buttons.html' %}
+
+<div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+    <div class="card-header">
+      <h2><i data-lucide="settings"></i> Global Settings</h2>
+    </div>
+    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <p>Configure global DHCP settings such as default lease times, interfaces, and reservation identifiers.</p>
+        <br>
+      </div>
+      <a href="{{ url_for('main.system.global_settings') }}" class="btn btn-outline" style="width: 100%;">
+        <i data-lucide="settings"></i> Manage Settings
+      </a>
+    </div>
+  </div>
+
+  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+    <div class="card-header">
+      <h2><i data-lucide="network"></i> DHCPv4 Pools Management</h2>
+    </div>
+    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <p>View and manage DHCPv4 pools. Add, edit, or delete DHCP pools and subnets.</p>
+        <br>
+      </div>
+      <a href="{{ url_for('main.dhcp4.pools') }}" class="btn btn-outline" style="width: 100%;">
+        <i data-lucide="folder-tree"></i> View v4 Pools
+      </a>
+    </div>
+  </div>
+
+  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+    <div class="card-header">
+      <h2><i data-lucide="globe"></i> DHCPv6 Pools Management</h2>
+    </div>
+    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <p>View and manage DHCPv6 pools. Add, edit, or delete DHCPv6 subnets and Prefix Delegations.</p>
+        <br>
+      </div>
+      <a href="{{ url_for('main.dhcp6.pools6') }}" class="btn btn-outline" style="width: 100%;">
+        <i data-lucide="folder-tree"></i> View v6 Pools
+      </a>
+    </div>
+  </div>
+
+  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+    <div class="card-header">
+      <h2><i data-lucide="hard-drive"></i> MAC Reservations</h2>
+    </div>
+    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <p>Manage static MAC reservations. Assign specific IP addresses to critical devices.</p>
+        <br>
+      </div>
+      <a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="btn btn-outline" style="width: 100%;">
+        <i data-lucide="clipboard-list"></i> View Reservations
+      </a>
+    </div>
+  </div>
+
+  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+    <div class="card-header">
+      <h2><i data-lucide="list"></i> Active Leases</h2>
+    </div>
+    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <p>Monitor current active leases issued by the server and their expiration times.</p>
+        <br>
+      </div>
+      <a href="{{ url_for('main.dhcp4.leases') }}" class="btn btn-outline" style="width: 100%;">
+        <i data-lucide="activity"></i> View Leases
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

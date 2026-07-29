@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Users — EZ-Kea{% endblock %}
+{% block content %}
+<div class="page-header"><h1><i data-lucide="users"></i> User Management</h1></div>
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h2>Create User</h2></div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('auth.users_create') }}" style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div><label class="form-label">Username</label><input name="username" type="text" class="form-control" required></div>
+      <div><label class="form-label">Password</label><input name="password" type="password" class="form-control" required></div>
+      <div><label class="form-label">Email</label><input name="email" type="email" class="form-control"></div>
+      <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.1rem;"><input type="checkbox" name="is_admin" id="is_admin"><label for="is_admin" style="font-weight:400;">Admin</label></div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="user-plus"></i> Create</button>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h2>All Users</h2></div>
+  <div class="card-body" style="padding:0;">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+        <th style="padding:0.75rem 1rem;text-align:left;">Username</th>
+        <th style="padding:0.75rem 1rem;text-align:left;">Email</th>
+        <th style="padding:0.75rem 1rem;text-align:left;">Role</th>
+        <th style="padding:0.75rem 1rem;text-align:left;">Last Login</th>
+        <th style="padding:0.75rem 1rem;text-align:left;">Actions</th>
+      </tr></thead>
+      <tbody>
+      {% for u in users %}
+      <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+        <td style="padding:0.75rem 1rem;">{{ u.username }}{% if u.is_break_glass %} <span style="font-size:0.75rem;opacity:0.6;">(break-glass)</span>{% endif %}</td>
+        <td style="padding:0.75rem 1rem;">{{ u.email or '—' }}</td>
+        <td style="padding:0.75rem 1rem;">{{ 'Admin' if u.is_admin else 'User' }}</td>
+        <td style="padding:0.75rem 1rem;">{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else '—' }}</td>
+        <td style="padding:0.75rem 1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          {% if not u.is_break_glass %}
+          <form method="POST" action="{{ url_for('auth.users_toggle_admin', uid=u.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.6rem;">{{ 'Revoke Admin' if u.is_admin else 'Make Admin' }}</button>
+          </form>
+          <form method="POST" action="{{ url_for('auth.users_reset_2fa', uid=u.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.6rem;">Reset 2FA</button>
+          </form>
+          <form method="POST" action="{{ url_for('auth.users_delete', uid=u.id) }}" style="display:inline;" onsubmit="return confirm('Delete user {{ u.username }}?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.6rem;border-color:rgba(239,68,68,0.4);color:#ef4444;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

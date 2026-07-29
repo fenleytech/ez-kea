@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Set Up 2FA — EZ-Kea{% endblock %}
+{% block content %}
+<div style="max-width:460px;margin:4rem auto;">
+  <div class="card">
+    <div class="card-header"><h1 style="font-size:1.4rem;"><i data-lucide="shield-check"></i> Set Up Two-Factor Auth</h1></div>
+    <div class="card-body">
+      <p style="opacity:0.8;">Scan the QR code with your authenticator app, then enter the 6-digit code to confirm.</p>
+      <div style="text-align:center;margin:1.25rem 0;">
+        <img src="{{ totp_qr }}" alt="TOTP QR Code" style="border-radius:8px;max-width:200px;">
+      </div>
+      <p style="font-size:0.8rem;opacity:0.6;margin-bottom:1.25rem;">Manual key: <code>{{ totp_secret }}</code></p>
+      <form method="POST" action="{{ url_for('auth.login_2fa_setup') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="margin-bottom:1.25rem;">
+          <label for="code" class="form-label">Verification Code</label>
+          <input id="code" name="code" type="text" class="form-control" inputmode="numeric" autocomplete="one-time-code" autofocus required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;"><i data-lucide="check"></i> Confirm & Enable</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

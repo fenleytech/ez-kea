@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}License — EZ-Kea{% endblock %}
+{% block content %}
+<div class="page-header"><h1><i data-lucide="key"></i> License</h1></div>
+<div class="card" style="max-width:700px;">
+  <div class="card-header"><h2>Current License Status</h2></div>
+  <div class="card-body">
+    {% if lic.valid %}
+    <p style="color:#10b981;"><i data-lucide="check-circle" style="vertical-align:middle;"></i> <strong>Active</strong> — licensed to {{ lic.licensee }}</p>
+    <table style="margin-top:1rem;border-collapse:collapse;width:100%;">
+      <tr><td style="padding:0.4rem 0;opacity:0.7;width:140px;">Expires</td><td>{{ lic.expires }} ({{ lic.days_remaining }} days remaining)</td></tr>
+      <tr><td style="padding:0.4rem 0;opacity:0.7;">Max Leases</td><td>{{ 'Unlimited' if lic.max_leases == 0 else lic.max_leases }}</td></tr>
+      <tr><td style="padding:0.4rem 0;opacity:0.7;">License ID</td><td><code>{{ lic.license_id }}</code></td></tr>
+    </table>
+    {% else %}
+    <p style="opacity:0.7;">Free tier — all features available up to 100 active leases.{% if lic.error %} ({{ lic.error }}){% endif %}</p>
+    {% endif %}
+    <hr style="margin:1.5rem 0;border-color:rgba(255,255,255,0.1);">
+    <h3 style="font-size:1rem;margin-bottom:0.75rem;">Enter License Key</h3>
+    <form method="POST" action="{{ url_for('auth.license_page') }}" style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div style="flex:1;min-width:240px;"><label for="license_key" class="form-label">License Key</label>
+        <input id="license_key" name="license_key" type="text" class="form-control" placeholder="EZK1...." required></div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="check"></i> Activate</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

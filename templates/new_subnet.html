@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}New IPv4 Subnet - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="plus-circle"></i> Add New IPv4 Subnet</h1>
+  <a href="{{ url_for('main.dhcp4.pools') }}" class="btn btn-outline">
+    <i data-lucide="arrow-left"></i> Back to Pools
+  </a>
+</div>
+
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+  <div class="card-header">
+    <h2>Subnet Settings</h2>
+  </div>
+  <div class="card-body">
+    {% if errors %}
+    <div class="alert alert-danger">
+      <ul style="margin: 0; padding-left: 1.5rem;">
+        {% for error in errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <form action="{{ url_for('main.dhcp4.new_subnet') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="shared-network-name" value="{{ shared_network_name }}">
+
+      <div class="form-group">
+        <label for="shared-network" class="form-label">Shared Network Group</label>
+        <input type="text" class="form-control" id="shared-network" value="{{ shared_network_name }}" disabled
+          style="opacity: 0.7;">
+      </div>
+
+      <div class="form-group">
+        <label for="subnet" class="form-label">Subnet CIDR <span style="color: var(--danger-red);">*</span></label>
+        <input type="text" class="form-control" id="subnet" name="subnet" placeholder="e.g. 192.168.1.0/24" required pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$" title="Must be a valid IPv4 CIDR, e.g. 192.168.1.0/24" oninput="autoFillIPv4Fields(this.value)">
+        <p id="subnet-helper-text" style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem; font-weight: 500;">
+          &#9432; The network address of your subnet (usually ends in .0).
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label for="routers" class="form-label">Default Gateway (Router) <span
+            style="color: var(--danger-red);">*</span></label>
+        <input type="text" class="form-control" id="routers" name="routers" placeholder="e.g. 192.168.1.1" required pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$" title="Must be a valid IPv4 address">
+        <p style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+          The IP address of the router for this network.
+        </p>
+      </div>
+
+      <div class="form-group"
+        style="padding: 1rem; background: rgba(27, 161, 216, 0.05); border: 1px solid rgba(27, 161, 216, 0.1); border-radius: 8px;">
+        <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; margin: 0; font-weight: 500;">
+          <input type="checkbox" id="static-only" name="static-only" style="width: 1.2rem; height: 1.2rem;">
+          Static Assignments Only (No Dynamic Pool)
+        </label>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 0;">
+          Check this if you only want to use this subnet for static MAC reservations without a dynamic assignable range.
+        </p>
+      </div>
+
+      <div id="pool-range-group">
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; font-weight: 500;">
+          <i data-lucide="info" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle;"></i> Specify the range of IP addresses that the server will dynamically hand out to devices.
+        </p>
+        <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+          <div class="form-group">
+            <label for="range-start" class="form-label">Pool Start IP <span
+                style="color: var(--danger-red);">*</span></label>
+            <input type="text" class="form-control" id="range-start" name="range-start"
+              placeholder="e.g. 192.168.1.100" pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$" title="Must be a valid IPv4 address">
+          </div>
+
+          <div class="form-group">
+            <label for="range-end" class="form-label">Pool End IP <span
+                style="color: var(--danger-red);">*</span></label>
+            <input type="text" class="form-control" id="range-end" name="range-end" placeholder="e.g. 192.168.1.200" pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$" title="Must be a valid IPv4 address">
+          </div>
+        </div>
+      </div>
+
+      <hr style="border-color: var(--card-border); margin: 2rem 0;">
+
+      <div style="display: flex; justify-content: flex-end;">
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="check"></i> Create Subnet
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.getElementById('static-only').addEventListener('change', function () {
+    var poolRangeGroup = document.getElementById('pool-range-group');
+    var rangeStart = document.getElementById('range-start');
+    var rangeEnd = document.getElementById('range-end');
+    if (this.checked) {
+      poolRangeGroup.style.display = 'none';
+      rangeStart.removeAttribute('required');
+      rangeEnd.removeAttribute('required');
+    } else {
+      poolRangeGroup.style.display = 'block';
+      rangeStart.setAttribute('required', 'required');
+      rangeEnd.setAttribute('required', 'required');
+    }
+  });
+
+  // Run once on load to initialize state
+  document.getElementById('static-only').dispatchEvent(new Event('change'));
+
+  let hasUserEditedGateway = false;
+  let hasUserEditedPool = false;
+  let lastAutofilledGateway = "";
+  let lastAutofilledStart = "";
+  let lastAutofilledEnd = "";
+
+  document.getElementById('routers').addEventListener('input', () => hasUserEditedGateway = true);
+  document.getElementById('range-start').addEventListener('input', () => hasUserEditedPool = true);
+  document.getElementById('range-end').addEventListener('input', () => hasUserEditedPool = true);
+
+  function ipToInt(ip) {
+    return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+  }
+
+  function intToIp(int) {
+    return [
+      (int >>> 24) & 255,
+      (int >>> 16) & 255,
+      (int >>> 8) & 255,
+      int & 255
+    ].join('.');
+  }
+
+  function autoFillIPv4Fields(cidr) {
+    const cidrInput = document.getElementById('subnet');
+    const helperText = document.getElementById('subnet-helper-text');
+
+    if (cidr.trim() === "") {
+        cidrInput.setCustomValidity("");
+        if (helperText) helperText.innerHTML = `&#9432; The network address of your subnet (usually ends in .0).`;
+        return;
+    }
+
+    // Regex matches valid IPv4 + CIDR string
+    const match = cidr.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})$/);
+    if (!match) {
+        cidrInput.setCustomValidity("Must be a valid IPv4 CIDR, e.g. 192.168.1.0/24");
+        if (helperText) helperText.innerHTML = `<span style="color: var(--danger-red);">&#9888; Invalid CIDR format. Please use standard IPv4 CIDR notation (e.g. 192.168.1.0/24).</span>`;
+        return;
+    }
+
+    const ipStr = match[1];
+    const mask = parseInt(match[2], 10);
+
+    // Validate IP bounds
+    if (ipStr.split('.').some(o => parseInt(o, 10) > 255) || mask > 32 || mask < 8) {
+      cidrInput.setCustomValidity("Invalid IPv4 address or mask.");
+      if (helperText) helperText.innerHTML = `<span style="color: var(--danger-red);">&#9888; Invalid IPv4 address or mask bounds. Octets must be 0-255 and mask 8-32.</span>`;
+      return;
+    }
+
+    const ipInt = ipToInt(ipStr);
+    const hostBits = 32 - mask;
+    const maskInt = (0xFFFFFFFF << hostBits) >>> 0;
+    
+    // Calculate network boundaries
+    const networkOp = ipInt & maskInt;
+    
+    // Check if the provided IP is a valid network address (no host bits set)
+    if (ipInt !== networkOp) {
+      cidrInput.value = intToIp(networkOp) + '/' + mask;
+      if (helperText) {
+          helperText.innerHTML = `<span style="color: var(--success-green);">&#10003; Auto-corrected to valid network address ${intToIp(networkOp)}/${mask}</span>`;
+      }
+      cidrInput.setCustomValidity(""); // Clear any previous error
+    } else {
+      if (helperText) {
+          helperText.innerHTML = `&#9432; The network address of your subnet (usually ends in .0).`;
+      }
+      cidrInput.setCustomValidity(""); // Clear any previous error
+    }
+
+    const broadcastOp = networkOp | (~maskInt >>> 0);
+    
+    // Ensure the user actually entered the base network address (e.g. 192.168.1.0 and not 192.168.1.5)
+    // If not, we still calculate based off the base network it belongs to
+    
+    // Gateway is typically the first usable IP
+    const gwInt = networkOp + 1;
+    // Pool starts at the second usable IP
+    const startInt = networkOp + 2;
+    // Pool ends at the last usable IP (broadcast - 1)
+    const endInt = broadcastOp - 1;
+
+    // Sanity check that we actually have room for a pool
+    if (endInt < startInt) return;
+
+    let gwFill = intToIp(gwInt);
+    let startFill = intToIp(startInt);
+    let endFill = intToIp(endInt);
+
+    let gwElem = document.getElementById('routers');
+    if (!hasUserEditedGateway && (gwElem.value === "" || gwElem.value === lastAutofilledGateway)) {
+      gwElem.value = gwFill;
+      lastAutofilledGateway = gwFill;
+    }
+    
+    let startElem = document.getElementById('range-start');
+    let endElem = document.getElementById('range-end');
+    if (!hasUserEditedPool && 
+        (startElem.value === "" || startElem.value === lastAutofilledStart) &&
+        (endElem.value === "" || endElem.value === lastAutofilledEnd)) {
+      startElem.value = startFill;
+      endElem.value = endFill;
+      lastAutofilledStart = startFill;
+      lastAutofilledEnd = endFill;
+    }
+  }
+
+</script>
+{% endblock %}

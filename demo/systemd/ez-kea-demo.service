@@ -1,0 +1,43 @@
+[Unit]
+Description=EZ-Kea public demo
+After=network.target
+
+[Service]
+Type=simple
+User=ezkea
+Group=ezkea
+WorkingDirectory=/srv/ez-kea-demo
+
+# Bind to loopback only and put a TLS-terminating reverse proxy in front.
+# EZ-Kea refuses to start on a non-loopback HOST while SECRET_KEY is still the
+# default, and the demo has no business being reachable directly on :8080.
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+
+# Pin the demo to its sandbox data set. Without these, EZ-Kea's auto-discovery
+# would bind to a real /etc/kea config if one ever appears on this host —
+# which is exactly the accident the demo must not have.
+Environment=SETTINGS_FILE=/srv/ez-kea-demo/data/ez-kea-settings.json
+Environment=DATABASE_URL=sqlite:////srv/ez-kea-demo/data/ez-kea.db
+Environment=BACKUP_DIR=/srv/ez-kea-demo/data/backups/
+Environment=DHCP_CONFIG_FILE=/srv/ez-kea-demo/data/kea-dhcp4.conf
+Environment=DHCP6_CONFIG_FILE=/srv/ez-kea-demo/data/kea-dhcp6.conf
+
+# SECRET_KEY lives here, not in the unit file. Create it once with:
+#   install -o ezkea -g ezkea -m 0600 /dev/null /etc/ez-kea-demo.env
+#   echo "SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))')" >> /etc/ez-kea-demo.env
+EnvironmentFile=/etc/ez-kea-demo.env
+
+ExecStart=/srv/ez-kea-demo/venv/bin/python /srv/ez-kea-demo/app.py
+Restart=always
+RestartSec=2
+
+# The demo only ever needs its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/ez-kea-demo/data
+
+[Install]
+WantedBy=multi-user.target

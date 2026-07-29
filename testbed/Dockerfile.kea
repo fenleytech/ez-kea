@@ -1,0 +1,10 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y kea-dhcp4-server kea-ctrl-agent iproute2 tcpdump && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /var/run/kea /run/kea /var/lib/kea /var/log && \
+    chmod 777 /var/run/kea /run/kea
+
+# The default Kea config will be mounted via docker-compose into /etc/kea
+CMD ["kea-dhcp4", "-c", "/etc/kea/kea-dhcp4.conf"]

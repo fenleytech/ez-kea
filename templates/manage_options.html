@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Manage DHCPv{{ version }} Options - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i data-lucide="settings-2"></i> Manage DHCP Options</h1>
+    {% if standalone %}
+    <a href="{{ url_for('main.dhcp4.pools') }}" class="btn btn-outline">
+        <i data-lucide="arrow-left"></i> Back to Pools
+    </a>
+    {% else %}
+    <a href="{{ url_for('main.dhcp4.pools' if version == '4' else 'main.dhcp6.pools6') }}" class="btn btn-outline">
+        <i data-lucide="arrow-left"></i> Back to Pools
+    </a>
+    {% endif %}
+</div>
+
+{% set dhcp_version = version|default("4") %}
+{% include 'config_buttons.html' %}
+
+<div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+    <!-- Add Option Form -->
+    <div class="card">
+        <div class="card-header">
+            <h2><i data-lucide="plus"></i> Add / Update Option</h2>
+        </div>
+        <div class="card-body">
+            <p class="text-secondary" style="margin-bottom: 1rem;">Target subnet: <strong>{{ subnet }}</strong>{% if shared_network_name != '(standalone)' %} ({{ shared_network_name }}){% endif %}</p>
+
+            <!-- Common Options Presets -->
+            <div class="form-group">
+                <label class="form-label" for="option-preset">Quick Presets</label>
+                <select id="option-preset" class="form-control" onchange="applyPreset(this)">
+                    <option value="">-- Select a common option --</option>
+                    {% if version == '6' %}
+                    <optgroup label="Network">
+                        <option value="dns-servers|e.g. 2001:4860:4860::8888, 2001:4860:4860::8844">DNS Servers (option 23)</option>
+                        <option value="domain-search|e.g. home.local">Domain Search List (option 24)</option>
+                    </optgroup>
+                    <optgroup label="Time">
+                        <option value="sntp-servers|e.g. 2001:db8::123">SNTP Servers (option 31, deprecated)</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                        <option value="nis-servers|e.g. 2001:db8::53">NIS Servers (option 27)</option>
+                        <option value="sip-server-addr|e.g. 2001:db8::5060">SIP Servers (option 22)</option>
+                    </optgroup>
+                    {% else %}
+                    <optgroup label="Network">
+                        <option value="routers|e.g. 192.168.1.1">Default Gateway (option 3)</option>
+                        <option value="domain-name-servers|e.g. 1.1.1.1, 8.8.8.8">DNS Servers (option 6)</option>
+                        <option value="domain-name|e.g. home.local">Domain Name (option 15)</option>
+                        <option value="broadcast-address|e.g. 192.168.1.255">Broadcast Address (option 28)</option>
+                    </optgroup>
+                    <optgroup label="Time">
+                        <option value="ntp-servers|e.g. 0.pool.ntp.org or 192.168.1.1">NTP Servers (option 42)</option>
+                    </optgroup>
+                    <optgroup label="Management / TR-069">
+                        <option value="vivso-suboptions|e.g. http://acs.example.com/cwmp">ACS URL / TR-069 CWMP (option 43/125)</option>
+                        <option value="tftp-server-name|e.g. 192.168.1.10">TFTP Server (option 66)</option>
+                        <option value="boot-file-name|e.g. pxelinux.0">Bootfile Name (option 67)</option>
+                    </optgroup>
+                    <optgroup label="Policy">
+                        <option value="ip-forwarding|0 or 1">IP Forwarding (option 19)</option>
+                        <option value="log-servers|e.g. 192.168.1.5">Log / Syslog Server (option 7)</option>
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+
+            {% if standalone %}
+            <form action="{{ url_for('main.options.manage_standalone_subnet6_options' if version == '6' else 'main.options.manage_standalone_subnet4_options', subnet=subnet) }}" method="POST">
+            {% else %}
+            <form action="{{ url_for('main.options.manage_subnet6_options' if version == '6' else 'main.options.manage_subnet4_options', shared_network_name=shared_network_name, subnet=subnet) }}" method="POST">
+            {% endif %}
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="form-group">
+                    <label for="option-name" class="form-label">Option Name <span style="color: var(--danger-red);">*</span></label>
+                    <input type="text" class="form-control" id="option-name" name="option-name"
+                        placeholder="e.g. domain-name-servers" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="option-data" class="form-label">Option Data <span style="color: var(--danger-red);">*</span></label>
+                    <input type="text" class="form-control" id="option-data" name="option-data"
+                        placeholder="e.g. 1.1.1.1, 8.8.8.8" required>
+                    <span id="option-hint" class="text-secondary" style="font-size: 0.8rem;"></span>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+                    <button type="submit" class="btn btn-primary">
+                        <i data-lucide="save"></i> Save Option
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Existing Options Table -->
+    <div class="card">
+        <div class="card-header">
+            <h2><i data-lucide="list"></i> Configured Options</h2>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            {% if options %}
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option Name</th>
+                            <th>Data</th>
+                            <th style="text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for opt in options %}
+                        <tr>
+                            <td style="font-family: monospace; font-weight: 500; color: var(--primary-blue);">{{ opt.name }}</td>
+                            <td>{{ opt.data }}</td>
+                            <td style="text-align: right;">
+                                {% if standalone %}
+                                <form action="{{ url_for('main.options.delete_standalone_subnet6_option' if version == '6' else 'main.options.delete_standalone_subnet4_option', subnet=subnet) }}"
+                                {% else %}
+                                <form action="{{ url_for('main.options.delete_subnet6_option' if version == '6' else 'main.options.delete_subnet4_option', shared_network_name=shared_network_name, subnet=subnet) }}"
+                                {% endif %}
+                                    method="POST" onsubmit="return confirm('Delete this option?');" style="margin: 0;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="option-name" value="{{ opt.name }}">
+                                    <button type="submit" class="btn btn-danger btn-sm" title="Delete Option">
+                                        <i data-lucide="trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div style="text-align: center; padding: 3rem 1rem;">
+                <i data-lucide="settings" style="width: 48px; height: 48px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
+                <h3 style="color: var(--text-secondary);">No Custom Options</h3>
+                <p style="color: var(--text-secondary);">No DHCP options are configured for this subnet yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+const PRESETS = {
+    "routers":               { hint: "Single gateway IP, e.g. 192.168.1.1" },
+    "domain-name-servers":   { hint: "Comma-separated IPs, e.g. 1.1.1.1, 8.8.8.8" },
+    "domain-name":           { hint: "DNS search domain, e.g. home.local" },
+    "broadcast-address":     { hint: "Broadcast IP for the subnet, e.g. 192.168.1.255" },
+    "ntp-servers":           { hint: "Comma-separated IPs or hostnames" },
+    "vivso-suboptions":      { hint: "ACS/CWMP URL for TR-069, e.g. http://acs.example.com/cwmp" },
+    "tftp-server-name":      { hint: "IP or hostname of TFTP server" },
+    "boot-file-name":        { hint: "Filename to serve via TFTP, e.g. pxelinux.0" },
+    "ip-forwarding":         { hint: "0 = disabled, 1 = enabled" },
+    "log-servers":           { hint: "Syslog server IP(s), comma-separated" },
+    "dns-servers":           { hint: "Comma-separated IPv6 addresses" },
+    "domain-search":         { hint: "DNS search domain, e.g. home.local" },
+    "sntp-servers":          { hint: "Comma-separated IPv6 addresses" },
+    "nis-servers":           { hint: "Comma-separated IPv6 addresses" },
+    "sip-server-addr":       { hint: "Comma-separated IPv6 addresses" },
+};
+
+function applyPreset(sel) {
+    if (!sel.value) return;
+    const [name, placeholder] = sel.value.split("|");
+    document.getElementById("option-name").value = name;
+    const dataEl = document.getElementById("option-data");
+    dataEl.placeholder = placeholder || "";
+    dataEl.focus();
+    const hint = PRESETS[name] ? PRESETS[name].hint : "";
+    document.getElementById("option-hint").textContent = hint;
+    sel.value = "";
+}
+</script>
+{% endblock %}

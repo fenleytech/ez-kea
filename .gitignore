@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env
+
+# Flask / Web
+instance/
+.webassets-cache
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+
+# Databases
+*.sqlite3
+*.db
+
+# OS / Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Project Specific
+backups/
+*.bak.*
+data/
+.gemini/
+.agents/
+.playwright-mcp/
+
+# Vendor-side license signing key — NEVER distributed with the app itself
+# (see ez_kea/license.py / license_gen.py). Only the public key is embedded
+# in ez_kea/license.py; the private key must stay offline.
+keys/
+# Only ignore the dynamically-generated Kea data under testbed/data/ (mirrors
+# testbed/.gitignore) -- NOT the whole directory, so the committed
+# kea-dhcp4.conf.example and pre-seeded ez-kea-settings.json stay tracked.
+testbed/data/var/
+testbed/data/etc/kea/kea-dhcp4.conf

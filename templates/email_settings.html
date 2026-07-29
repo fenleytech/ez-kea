@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Email Settings — EZ-Kea{% endblock %}
+{% block content %}
+<div class="page-header"><h1><i data-lucide="mail"></i> Email Settings</h1></div>
+<div class="card" style="max-width:700px;">
+  <div class="card-header"><h2>SMTP Configuration</h2></div>
+  <div class="card-body">
+    <p style="opacity:0.7;margin-top:0;">Used to send account-recovery emails (e.g. "forgot password" links). This works even without a commercial license, so admins can never get locked out.</p>
+    <form method="POST" action="{{ url_for('auth.email_settings') }}" id="emailSettingsForm" style="display:flex;flex-direction:column;gap:1rem;max-width:480px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div>
+        <label for="smtp_host" class="form-label">SMTP Host</label>
+        <input id="smtp_host" name="smtp_host" type="text" class="form-control" placeholder="smtp.example.com" value="{{ settings.smtp_host or '' }}">
+      </div>
+
+      <div>
+        <label for="smtp_port" class="form-label">SMTP Port</label>
+        <input id="smtp_port" name="smtp_port" type="number" class="form-control" placeholder="587" value="{{ settings.smtp_port or '587' }}">
+      </div>
+
+      <div>
+        <label for="smtp_username" class="form-label">SMTP Username</label>
+        <input id="smtp_username" name="smtp_username" type="text" class="form-control" value="{{ settings.smtp_username or '' }}">
+      </div>
+
+      <div>
+        <label for="smtp_password" class="form-label">SMTP Password</label>
+        <input id="smtp_password" name="smtp_password" type="password" class="form-control" placeholder="{{ 'Leave blank to keep current password' if settings.smtp_password else '' }}" autocomplete="new-password">
+      </div>
+
+      <div>
+        <label for="smtp_from" class="form-label">From Address</label>
+        <input id="smtp_from" name="smtp_from" type="email" class="form-control" placeholder="ez-kea@example.com" value="{{ settings.smtp_from or '' }}">
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0.4rem;">
+        <input type="checkbox" id="smtp_tls" name="smtp_tls" {% if settings.smtp_tls != 'false' %}checked{% endif %}>
+        <label for="smtp_tls" style="font-weight:400;">Use STARTTLS (ignored on port 465, which always uses implicit TLS)</label>
+      </div>
+
+      <div>
+        <label for="company_name" class="form-label">Company / Product Name</label>
+        <input id="company_name" name="company_name" type="text" class="form-control" placeholder="EZ-Kea" value="{{ settings.company_name or '' }}">
+      </div>
+
+      <div>
+        <label for="app_url" class="form-label">App URL</label>
+        <input id="app_url" name="app_url" type="text" class="form-control" placeholder="https://ezkea.example.com" value="{{ settings.app_url or '' }}">
+      </div>
+
+      <div style="display:flex;gap:0.75rem;align-items:center;">
+        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save</button>
+        <button type="button" class="btn btn-outline" id="testEmailBtn"><i data-lucide="send"></i> Send Test Email</button>
+      </div>
+      <div id="test-email-status"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const statusDiv = document.getElementById("test-email-status");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+    document.getElementById("testEmailBtn").addEventListener("click", function () {
+        statusDiv.innerHTML = "<span style='color: var(--text-secondary);'><i data-lucide='loader'></i> Testing...</span>";
+        lucide.createIcons();
+
+        const payload = {
+            smtp_host: document.getElementById("smtp_host").value,
+            smtp_port: document.getElementById("smtp_port").value,
+            smtp_username: document.getElementById("smtp_username").value,
+            smtp_password: document.getElementById("smtp_password").value,
+            smtp_from: document.getElementById("smtp_from").value,
+            smtp_tls: document.getElementById("smtp_tls").checked,
+        };
+
+        fetch('{{ url_for("auth.email_settings_test") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify(payload),
+        })
+            .then(r => r.json())
+            .then(res => {
+                if (res.ok) {
+                    statusDiv.innerHTML = `<span style='color: var(--success-green);'><i data-lucide='check'></i> ${res.message}</span>`;
+                } else {
+                    statusDiv.innerHTML = `<span style='color: var(--danger-red);'><i data-lucide='alert-triangle'></i> ${res.message}</span>`;
+                }
+                lucide.createIcons();
+            });
+    });
+});
+</script>
+{% endblock %}

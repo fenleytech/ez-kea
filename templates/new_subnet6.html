@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}New IPv6 Subnet - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i data-lucide="plus-circle"></i> Add New IPv6 Subnet</h1>
+    <a href="{{ url_for('main.dhcp6.pools6') }}" class="btn btn-outline">
+        <i data-lucide="arrow-left"></i> Back to Pools
+    </a>
+</div>
+
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+    <div class="card-header">
+        <h2>Subnet Settings</h2>
+    </div>
+    <div class="card-body">
+        {% if errors %}
+        <div class="alert alert-danger">
+            <ul style="margin: 0; padding-left: 1.5rem;">
+                {% for error in errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <form action="{{ url_for('main.dhcp6.new_subnet6') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="shared-network-name" value="{{ shared_network_name }}">
+
+            <div class="form-group">
+                <label for="shared-network" class="form-label">IPv6 Shared Network Group</label>
+                <input type="text" class="form-control" id="shared-network" value="{{ shared_network_name }}" disabled
+                    style="opacity: 0.7;">
+            </div>
+
+            <div class="form-group">
+                <label for="subnet" class="form-label">Subnet CIDR <span
+                        style="color: var(--danger-red);">*</span></label>
+                <input type="text" class="form-control" id="subnet" name="subnet" placeholder="e.g. 2001:db8:1::/64"
+                    required pattern="^([0-9a-fA-F:]+)/[0-9]{1,3}$" title="Must be a valid IPv6 CIDR, e.g. 2001:db8:1::/64" oninput="autoFillIPv6Fields(this.value)">
+                <p id="subnet6-helper-text" style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem; font-weight: 500;">
+                    &#9432; The IPv6 network address of your subnet (usually ends in ::/64).
+                </p>
+            </div>
+
+            <div class="card" style="background: rgba(59, 130, 246, 0.05); margin-top: 1.5rem;">
+                <div class="card-header" style="background: transparent;">
+                    <h3><i data-lucide="laptop"></i> Standard Address Pool (IA_NA)</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 1rem;">
+                        <i data-lucide="info" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle;"></i> Hands out individual IPv6 addresses to <strong>end hosts</strong> (PCs, phones, servers) — the IPv6 equivalent of a normal DHCPv4 pool. Use this for regular clients; use Prefix Delegation below for routers/CPE that need their own downstream block.
+                    </p>
+                    <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+                        <div class="form-group">
+                            <label for="pool-start" class="form-label">Pool Start</label>
+                            <input type="text" class="form-control" id="pool-start" name="pool-start"
+                                placeholder="e.g. 2001:db8:1::100">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="pool-end" class="form-label">Pool End</label>
+                            <input type="text" class="form-control" id="pool-end" name="pool-end"
+                                placeholder="e.g. 2001:db8:1::1ff">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="background: rgba(16, 185, 129, 0.05); margin-top: 1.5rem;">
+                <div class="card-header" style="background: transparent;">
+                    <h3><i data-lucide="network"></i> Prefix Delegation (PD) configuration</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 1rem;">
+                        <i data-lucide="info" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle;"></i> <strong>Prefix Delegation</strong> allows routers on this network to automatically request entire blocks of IPv6 addresses from your server to pass on to downstream devices. If you are just serving standard endpoints (PCs, phones), leave this blank.
+                    </p>
+                    <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+                        <div class="form-group">
+                            <label for="pd-pool" class="form-label">PD Pool Subnet</label>
+                            <input type="text" class="form-control" id="pd-pool" name="pd-pool"
+                                placeholder="e.g. 2001:db8:2::/48">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="pd-length" class="form-label">Delegated Length</label>
+                            <input type="number" class="form-control" id="pd-length" name="pd-length"
+                                placeholder="e.g. 64">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr style="border-color: var(--card-border); margin: 2rem 0;">
+
+            <div style="display: flex; justify-content: flex-end;">
+                <button type="submit" class="btn btn-primary">
+                    <i data-lucide="check"></i> Create IPv6 Subnet
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let hasUserEditedPDPool = false;
+    let hasUserEditedPDLen = false;
+    let lastAutofilledPDPool = "";
+    let lastAutofilledPDLen = "";
+
+    document.getElementById('pd-pool').addEventListener('input', () => hasUserEditedPDPool = true);
+    document.getElementById('pd-length').addEventListener('input', () => hasUserEditedPDLen = true);
+
+    function normalizeIPv6(ipStr) {
+        if (ipStr === '::') return new Array(8).fill('0');
+        let parts = ipStr.split('::');
+        if (parts.length > 2) throw new Error("Invalid IPv6");
+        let left = parts[0] ? parts[0].split(':') : [];
+        let right = parts.length > 1 && parts[1] ? parts[1].split(':') : [];
+        if (left.length === 1 && left[0] === '') left = [];
+        if (right.length === 1 && right[0] === '') right = [];
+        let missing = 8 - (left.length + right.length);
+        if (parts.length === 1 && left.length !== 8) throw new Error("Invalid IPv6");
+        if (missing < 0) throw new Error("Invalid IPv6");
+        let middle = new Array(missing).fill('0');
+        let combined = left.concat(middle, right);
+        return combined.map(p => p.padStart(4, '0'));
+    }
+
+    function ip6ToBigInt(ipStr) {
+        try {
+            let fullParts = normalizeIPv6(ipStr);
+            let hexStr = '0x' + fullParts.join('');
+            return BigInt(hexStr);
+        } catch(e) {
+            return null;
+        }
+    }
+
+    function bigIntToIp6(bigIntVal) {
+        let hexStr = bigIntVal.toString(16).padStart(32, '0');
+        let parts = [];
+        for(let i=0; i<32; i+=4) {
+            parts.push(parseInt(hexStr.substring(i, i+4), 16).toString(16));
+        }
+        let bestStart = -1, bestLen = 0, currStart = -1, currLen = 0;
+        for(let i=0; i<8; i++) {
+            if(parts[i] === '0') {
+                if(currStart === -1) currStart = i;
+                currLen++;
+                if(currLen > bestLen) { bestLen = currLen; bestStart = currStart; }
+            } else {
+                currStart = -1; currLen = 0;
+            }
+        }
+        if(bestLen > 1) {
+            parts[bestStart] = '';
+            for(let j=1; j<bestLen; j++) parts[bestStart+j] = null;
+            let filtered = parts.filter(p => p !== null);
+            let res = filtered.join(':');
+            if (res === '') return '::';
+            if (res.startsWith(':')) res = ':' + res;
+            if (res.endsWith(':')) res = res + ':';
+            return res;
+        }
+        return parts.join(':');
+    }
+
+    function autoFillIPv6Fields(cidr) {
+        const cidrInput = document.getElementById('subnet');
+        const helperText = document.getElementById('subnet6-helper-text');
+        
+        if (cidr.trim() === "") {
+            cidrInput.setCustomValidity("");
+            if (helperText) helperText.innerHTML = `&#9432; The IPv6 network address of your subnet (usually ends in ::/64).`;
+            return;
+        }
+
+        // Very loose check for valid-ish IPv6 CIDR block
+        const match = cidr.match(/^([0-9a-fA-F:\.]+)\/(\d{1,3})$/);
+        if (!match) {
+            cidrInput.setCustomValidity("Must be a valid IPv6 CIDR, e.g. 2001:db8:1::/64");
+            if (helperText) helperText.innerHTML = `<span style="color: var(--danger-red);">&#9888; Invalid CIDR format. Please use canonical IPv6 CIDR notation (e.g. 2001:db8::/64).</span>`;
+            return;
+        }
+
+        const prefixStr = match[1];
+        const mask = parseInt(match[2], 10);
+        
+        if (mask > 128 || mask < 1) {
+             cidrInput.setCustomValidity("Invalid IPv6 prefix length.");
+             if (helperText) helperText.innerHTML = `<span style="color: var(--danger-red);">&#9888; Invalid IPv6 prefix length. Must be between 1 and 128.</span>`;
+             return;
+        }
+        
+        let ipInt = ip6ToBigInt(prefixStr);
+        if (ipInt === null) {
+             cidrInput.setCustomValidity("Invalid IPv6 address structure.");
+             if (helperText) helperText.innerHTML = `<span style="color: var(--danger-red);">&#9888; Invalid IPv6 address structure.</span>`;
+             return;
+        }
+
+        const hostBits = BigInt(128 - mask);
+        const maskInt = ((1n << 128n) - 1n) ^ ((1n << hostBits) - 1n);
+        const networkOp = ipInt & maskInt;
+        
+        let correctPrefix = bigIntToIp6(networkOp);
+        
+        if (ipInt !== networkOp) {
+            cidrInput.value = correctPrefix + '/' + mask;
+            if (helperText) {
+                helperText.innerHTML = `<span style="color: var(--success-green);">&#10003; Auto-corrected to valid network address ${correctPrefix}/${mask}</span>`;
+            }
+            cidrInput.setCustomValidity("");
+        } else {
+            if (helperText) {
+                helperText.innerHTML = `&#9432; The IPv6 network address of your subnet (usually ends in ::/64).`;
+            }
+            cidrInput.setCustomValidity("");
+        }
+
+        // Typical home delegation is a /56 or /60, giving out /64s or /62s. 
+        if (mask <= 60) {
+            let pdPoolFill = correctPrefix + "/" + mask;
+            let pdLenFill = "64";
+
+            let pdPoolElem = document.getElementById('pd-pool');
+            let pdLenElem = document.getElementById('pd-length');
+
+            if (!hasUserEditedPDPool && (pdPoolElem.value === "" || pdPoolElem.value === lastAutofilledPDPool)) {
+                pdPoolElem.value = pdPoolFill;
+                lastAutofilledPDPool = pdPoolFill;
+            }
+            if (!hasUserEditedPDLen && (pdLenElem.value === "" || pdLenElem.value === lastAutofilledPDLen)) {
+                pdLenElem.value = pdLenFill;
+                lastAutofilledPDLen = pdLenFill;
+            }
+        }
+    }
+</script>
+{% endblock %}

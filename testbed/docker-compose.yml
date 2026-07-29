@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  kea:
+    build:
+      context: .
+      dockerfile: Dockerfile.kea
+    container_name: kea-testbed-kea-1
+    volumes:
+      - ./data/etc/kea:/etc/kea
+      - ./data/var/lib/kea:/var/lib/kea
+      - ./data/var/log:/var/log
+    networks:
+      - vlan10
+      - vlan20
+      - vlan99
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+
+  # ── Basic tests ───────────────────────────────────────────────────────────────
+
+  # TEST 1 & 6 & 8: Basic vlan10 client (dynamic pool, holds .100)
+  client-vlan10:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: kea-testbed-client-vlan10-1
+    networks:
+      vlan10:
+    mac_address: 00:11:22:33:44:55
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: tail -f /dev/null
+
+  # Basic vlan20 client
+  client-vlan20:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: kea-testbed-client-vlan20-1
+    networks:
+      vlan20:
+    mac_address: aa:bb:cc:dd:ee:ff
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: tail -f /dev/null
+
+  # ── TEST 3: MAC Reservation ───────────────────────────────────────────────────
+  # MAC is reserved in kea config → always gets .50
+
+  client-reserved:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: kea-testbed-client-reserved-1
+    networks:
+      vlan10:
+    mac_address: de:ad:be:ef:00:01
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: tail -f /dev/null
+
+  # ── TEST 4: Pool Exhaustion ───────────────────────────────────────────────────
+  # vlan10 pool = .100 and .101 (only 2 IPs, reservation at .50 is outside pool)
+  # client-vlan10 takes .100, client-overflow takes .101 → pool full
+  # client-vlan10-b (3rd MAC) should then get no lease
+
+  client-overflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: kea-testbed-client-overflow-1
+    networks:
+      vlan10:
+    mac_address: ca:fe:ba:be:00:01
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: tail -f /dev/null
+
+  # 3rd unique MAC on vlan10 — used AFTER vlan10 + overflow exhaust the pool
+  client-vlan10-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: kea-testbed-client-vlan10-b-1
+    networks:
+      vlan10:
+    mac_address: 00:11:22:33:44:66
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: tail -f /dev/null
+
+  # ── TEST 5: Unknown Subnet ────────────────────────────────────────────────────
+  # vlan99 has NO subnet configured in Kea → must get no lease
+
+  client-unknown-subnet:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: kea-testbed-client-unknown-1
+    networks:
+      vlan99:
+    mac_address: ba:ad:ca:fe:00:01
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: tail -f /dev/null
+
+networks:
+  vlan10:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.110.0/24
+  vlan20:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.120.0/24
+  # vlan99: Kea has NO subnet configured for this — used to test unknown-subnet handling
+  vlan99:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.99.0/24

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Profile — EZ-Kea{% endblock %}
+{% block content %}
+<div class="page-header"><h1><i data-lucide="user"></i> Profile — {{ current_user.username }}</h1></div>
+
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h2>Change Password</h2></div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('auth.change_password') }}" style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div><label class="form-label">Current Password</label><input name="current_password" type="password" class="form-control" required autocomplete="current-password"></div>
+      <div><label class="form-label">New Password</label><input name="new_password" type="password" class="form-control" required autocomplete="new-password"></div>
+      <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Update</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h2>Two-Factor Authentication</h2></div>
+  <div class="card-body">
+    {% if current_user.totp_enabled %}
+      <p style="color:#10b981;"><i data-lucide="shield-check" style="vertical-align:middle;"></i> 2FA is enabled.</p>
+      {% if recovery_codes %}
+      <div class="alert alert-warning" style="margin-top:1rem;"><strong>New recovery codes (save these now — they won't be shown again):</strong><br>
+        <div style="font-family:monospace;margin-top:0.5rem;">{% for c in recovery_codes %}{{ c }}<br>{% endfor %}</div></div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('auth.profile_2fa_confirm') }}" style="margin-top:1rem;display:flex;gap:0.75rem;align-items:flex-end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div><label class="form-label">Re-generate recovery codes (enter current code to confirm)</label><input name="code" type="text" class="form-control" inputmode="numeric" required></div>
+        <button type="submit" class="btn btn-outline">Regenerate</button>
+      </form>
+      <form method="POST" action="{{ url_for('auth.profile_2fa_disable') }}" style="margin-top:1rem;display:flex;gap:0.75rem;align-items:flex-end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div><label class="form-label">Password (to disable 2FA)</label><input name="password" type="password" class="form-control" required autocomplete="current-password"></div>
+        <button type="submit" class="btn btn-outline" style="border-color:rgba(239,68,68,0.4);color:#ef4444;">Disable 2FA</button>
+      </form>
+    {% elif current_user.totp_secret %}
+      <p>Scan the QR code and enter the code to activate:</p>
+      <img src="{{ totp_qr }}" alt="QR Code" style="max-width:180px;border-radius:8px;margin:1rem 0;">
+      <form method="POST" action="{{ url_for('auth.profile_2fa_confirm') }}" style="display:flex;gap:0.75rem;align-items:flex-end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div><label class="form-label">Verification Code</label><input name="code" type="text" class="form-control" inputmode="numeric" required></div>
+        <button type="submit" class="btn btn-primary"><i data-lucide="check"></i> Enable</button>
+      </form>
+    {% else %}
+      <p style="opacity:0.7;">2FA is not enabled on this account.</p>
+      <form method="POST" action="{{ url_for('auth.profile_2fa_setup') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-outline"><i data-lucide="shield"></i> Set Up 2FA</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

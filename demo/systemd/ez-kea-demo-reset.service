@@ -1,0 +1,15 @@
+[Unit]
+Description=Reset the EZ-Kea public demo to its seeded state
+After=network.target
+
+[Service]
+Type=oneshot
+
+# Runs as root so it can restart ez-kea-demo.service; the seeding itself only
+# touches /srv/ez-kea-demo/data, which it chowns back to the service account.
+Environment=DEMO_ROOT=/srv/ez-kea-demo
+Environment=DEMO_DATA=/srv/ez-kea-demo/data
+Environment=DEMO_SERVICE=ez-kea-demo.service
+
+ExecStart=/srv/ez-kea-demo/demo/reset_demo.sh
+ExecStartPost=/bin/chown -R ezkea:ezkea /srv/ez-kea-demo/data

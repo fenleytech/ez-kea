@@ -1,0 +1,36 @@
+{
+  "Dhcp4": {
+    "interfaces-config": {
+      "interfaces": ["eth0", "eth1", "eth2"]
+    },
+    "control-socket": {
+      "socket-type": "unix",
+      "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock"
+    },
+    "lease-database": {
+      "type": "memfile",
+      "lfc-interval": 3600,
+      "name": "/var/lib/kea/kea-leases4.csv"
+    },
+    "host-reservation-identifiers": ["hw-address"],
+    "valid-lifetime": 4000,
+    "option-data": [],
+    "subnet4": [],
+    "shared-networks": [],
+    "loggers": [
+      {
+        "name": "kea-dhcp4",
+        "severity": "INFO",
+        "debuglevel": 0,
+        "output_options": [
+          {
+            "output": "/var/log/kea-dhcp4.log",
+            "maxver": 8,
+            "maxsize": 204800,
+            "flush": true
+          }
+        ]
+      }
+    ]
+  }
+}

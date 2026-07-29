@@ -1,0 +1,32 @@
+#!/bin/sh
+# udhcpc.script - custom udhcpc bound/renew handler for testbed option verification
+# Place at /testbed/udhcpc.script inside the client containers
+
+CAPTURE_FILE="/tmp/dhcp_options.txt"
+
+case "$1" in
+    bound|renew)
+        echo "=== DHCP Options Received ===" > "$CAPTURE_FILE"
+        echo "Interface : $interface" >> "$CAPTURE_FILE"
+        echo "IP        : $ip" >> "$CAPTURE_FILE"
+        echo "Subnet    : $subnet" >> "$CAPTURE_FILE"
+        echo "Gateway   : ${router:-NONE}" >> "$CAPTURE_FILE"
+        echo "DNS       : ${dns:-NONE}" >> "$CAPTURE_FILE"
+        echo "NTP       : ${ntpsrv:-NONE}" >> "$CAPTURE_FILE"
+        echo "Domain    : ${domain:-NONE}" >> "$CAPTURE_FILE"
+        echo "Lease(s)  : ${lease:-NONE}" >> "$CAPTURE_FILE"
+        echo "TFTP      : ${tftp:-NONE}" >> "$CAPTURE_FILE"
+        echo "Boot File : ${bootfile:-NONE}" >> "$CAPTURE_FILE"
+        echo "Vendor    : ${vendorinfo:-NONE}" >> "$CAPTURE_FILE"
+        cat "$CAPTURE_FILE"
+        # Configure the interface
+        ip addr add "$ip/$mask" dev "$interface" 2>/dev/null || true
+        [ -n "$router" ] && ip route add default via "$router" 2>/dev/null || true
+        ;;
+    deconfig)
+        ip addr flush dev "$interface" 2>/dev/null || true
+        ;;
+    leasefail|nak)
+        echo "DHCP failed: $1 on $interface" > "$CAPTURE_FILE"
+        ;;
+esac

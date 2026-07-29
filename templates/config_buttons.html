@@ -1,0 +1,76 @@
+{% set dhcp_version = dhcp_version|default("4") %}
+<div class="card-header actions-bar" style="border-radius: 12px; margin-bottom: 1.5rem;">
+    <div style="display: flex; gap: 1rem; align-items: center;">
+        <form action="{{ url_for('main.system.backup_config', version=dhcp_version) }}" method="post" style="margin: 0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline" title="Backup Configuration">
+                <i data-lucide="save"></i> Backup
+            </button>
+        </form>
+
+        <form action="{{ url_for('main.system.restore_config', version=dhcp_version) }}" method="post" style="margin: 0;"
+            onsubmit="return confirm('Are you sure you want to restore the config? This will overwrite the current live configuration.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline" title="Restore Previous Configuration">
+                <i data-lucide="rotate-ccw"></i> Restore
+            </button>
+        </form>
+
+        <!-- These two are JS-driven (fetch()) rather than real form submits, so
+             the confirmation prompt and status reporting can happen without a
+             full page reload. They are plain buttons, not form submits, to
+             honestly reflect that -- no surrounding <form>/onsubmit scaffolding
+             that would never actually fire. See the script below for the
+             fetch() calls (CSRF token sent via the X-CSRFToken header) and the
+             confirm() guard on Apply. -->
+        <button type="button" class="btn btn-outline" id="testConfigBtn" title="Test Syntax">
+            <i data-lucide="check-circle"></i> Test Syntax
+        </button>
+
+        <button type="button" class="btn btn-primary" id="applyConfigBtn" title="Apply Changes via Kea-Ctrl Reload">
+            <i data-lucide="play-circle"></i> Apply Changes
+        </button>
+    </div>
+    <div id="action-status" style="margin-top: 0.5rem;"></div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const statusDiv = document.getElementById("action-status");
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+        document.getElementById("testConfigBtn").addEventListener("click", function () {
+            statusDiv.innerHTML = "<span style='color: var(--text-secondary);'><i data-lucide='loader'></i> Testing...</span>";
+            lucide.createIcons();
+
+            fetch('{{ url_for("main.system.test_config_version", version=dhcp_version) }}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+                .then(r => r.json().then(data => ({ status: r.status, body: data })))
+                .then(res => {
+                    if (res.status === 200) {
+                        statusDiv.innerHTML = `<span style='color: var(--success-green);'><i data-lucide='check'></i> ${res.body.message}</span>`;
+                    } else {
+                        statusDiv.innerHTML = `<span style='color: var(--danger-red);'><i data-lucide='alert-triangle'></i> ${res.body.error}</span>`;
+                    }
+                    lucide.createIcons();
+                });
+        });
+
+        document.getElementById("applyConfigBtn").addEventListener("click", function () {
+            if (!confirm('Please confirm you want to reload the daemon.')) return;
+
+            statusDiv.innerHTML = "<span style='color: var(--text-secondary);'><i data-lucide='loader'></i> Applying...</span>";
+            lucide.createIcons();
+
+            fetch('{{ url_for("main.system.apply_config_version", version=dhcp_version) }}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+                .then(r => r.json().then(data => ({ status: r.status, body: data })))
+                .then(res => {
+                    if (res.status === 200) {
+                        statusDiv.innerHTML = `<span style='color: var(--success-green);'><i data-lucide='check'></i> ${res.body.message}</span>`;
+                    } else {
+                        statusDiv.innerHTML = `<span style='color: var(--danger-red);'><i data-lucide='alert-triangle'></i> ${res.body.error}</span>`;
+                    }
+                    lucide.createIcons();
+                });
+        });
+    });
+</script>

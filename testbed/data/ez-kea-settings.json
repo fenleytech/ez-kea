@@ -1,0 +1,11 @@
+{
+  "kea_dhcp4_cmd": "docker exec kea-testbed-kea-1 kea-dhcp4",
+  "kea_ctrl_cmd": "docker exec kea-testbed-kea-1 keactrl",
+  "dhcp_config_file": "./testbed/data/etc/kea/kea-dhcp4.conf",
+  "dhcp_leases_file": "./testbed/data/var/lib/kea/kea-leases4.csv",
+  "dhcp_log_file": "./testbed/data/var/log/kea-dhcp4.log",
+  "dhcp_config_file_in_container": "/etc/kea/kea-dhcp4.conf",
+  "dhcp_log_file_in_container": "/var/log/kea-dhcp4.log",
+  "kea_reload_strategy": "sighup",
+  "kea_docker_container": "kea-testbed-kea-1"
+}

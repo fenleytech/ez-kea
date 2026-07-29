@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}IPv6 Reservations - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="hard-drive"></i> IPv6 Reservations</h1>
+  <div>
+    <a href="{{ url_for('main.dhcp6.new_reservation6') }}" class="btn btn-primary">
+      <i data-lucide="plus"></i> New Reservation
+    </a>
+  </div>
+</div>
+
+{% set dhcp_version = "6" %}
+{% include 'config_buttons.html' %}
+
+<div class="card">
+  <div class="card-header">
+    <h2><i data-lucide="table"></i> Configured Reservations</h2>
+  </div>
+  <div class="card-body" style="padding: 0;">
+    {% if reservations %}
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Address / Prefix</th>
+            <th>DUID</th>
+            <th>Hostname</th>
+            <th>Shared Network</th>
+            <th>Subnet</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for reservation in reservations %}
+          <tr>
+            <td>
+              {% if reservation.get('ip-addresses') %}
+              <span class="badge badge-info" style="background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">Address</span>
+              {% endif %}
+              {% if reservation.get('prefixes') %}
+              <span class="badge badge-success" style="background-color: rgba(16, 185, 129, 0.1); color: var(--success-green); border-color: rgba(16, 185, 129, 0.2);">Prefix</span>
+              {% endif %}
+            </td>
+            <td style="font-family: monospace; font-size: 1.1em; color: var(--primary-blue);">
+              {{ (reservation.get('ip-addresses') or reservation.get('prefixes') or ['N/A'])[0] }}
+            </td>
+            <td style="font-family: monospace;">{{ reservation.get('duid', 'N/A') }}</td>
+            <td>
+              {% if reservation.hostname != 'N/A' %}
+              <span class="badge badge-success">{{ reservation.hostname }}</span>
+              {% else %}
+              <span class="text-secondary">-</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if reservation.shared_network_name %}
+              {{ reservation.shared_network_name }}
+              {% else %}
+              <span class="text-secondary">(standalone)</span>
+              {% endif %}
+            </td>
+            <td><span class="badge" style="background-color: rgba(255, 255, 255, 0.1);">{{ reservation.subnet }}</span>
+            </td>
+            <td style="text-align: right;">
+              <form action="{{ url_for('main.dhcp6.delete_reservation6') }}" method="POST"
+                onsubmit="return confirm('Are you sure you want to delete this reservation?');" style="margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="subnet" value="{{ reservation.subnet }}">
+                <input type="hidden" name="duid" value="{{ reservation.get('duid', '') }}">
+                <button type="submit" class="btn btn-danger btn-sm" title="Delete">
+                  <i data-lucide="trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 4rem 2rem;">
+      <i data-lucide="inbox"
+        style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
+      <h2>No IPv6 Reservations</h2>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">There are currently no DUID-based reservations
+        configured.</p>
+      <a href="{{ url_for('main.dhcp6.new_reservation6') }}" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 1.1rem;">
+        <i data-lucide="plus" style="width: 20px; height: 20px;"></i> Add Reservation
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

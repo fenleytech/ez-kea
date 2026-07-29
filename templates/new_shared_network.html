@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}New Shared Network - EZ-Kea{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="plus-circle"></i> Create Shared Network</h1>
+  <a href="{{ url_for('main.dhcp4.pools') }}" class="btn btn-outline">
+    <i data-lucide="arrow-left"></i> Back to Pools
+  </a>
+</div>
+
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+  <div class="card-body">
+    {% if errors %}
+    <div class="alert alert-danger">
+      <ul style="margin: 0; padding-left: 1.5rem;">
+        {% for error in errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <form action="{{ url_for('main.dhcp4.new_shared_network') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <label for="shared-network-name" class="form-label">Shared Network Name <span
+            style="color: var(--danger-red);">*</span></label>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <i data-lucide="folder" style="color: var(--text-secondary); width: 16px; height: 16px;"></i>
+          <input type="text" class="form-control" id="shared-network-name" name="shared-network-name"
+            placeholder="e.g. VLAN10-Servers" required>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 0;">
+          A logical grouping identifier for multiple subnets.
+        </p>
+      </div>
+
+      <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="check"></i> Create
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

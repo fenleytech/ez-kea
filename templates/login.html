@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Log In — EZ-Kea{% endblock %}
+{% block content %}
+<div style="max-width:400px;margin:4rem auto;">
+  <div class="card">
+    <div class="card-header"><h1 style="font-size:1.4rem;"><i data-lucide="lock"></i> Sign In</h1></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('auth.login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="margin-bottom:1rem;">
+          <label for="username" class="form-label">Username</label>
+          <input id="username" name="username" type="text" class="form-control" autofocus autocomplete="username" required>
+        </div>
+        <div style="margin-bottom:1rem;">
+          <label for="password" class="form-label">Password</label>
+          <input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;font-weight:400;cursor:pointer;">
+            <input type="checkbox" name="remember"> Remember me
+          </label>
+          <a href="{{ url_for('auth.forgot_password') }}" style="font-size:0.85rem;">Forgot password?</a>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">
+          <i data-lucide="log-in"></i> Sign In
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

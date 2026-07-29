@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Account Setup — EZ-Kea{% endblock %}
+{% block content %}
+<div style="max-width:440px;margin:4rem auto;">
+  <div class="card">
+    <div class="card-header"><h1 style="font-size:1.4rem;"><i data-lucide="shield"></i> Secure Your Account</h1></div>
+    <div class="card-body">
+      <p style="margin-bottom:1.25rem;opacity:0.8;">Before you proceed, please {% if need_username %}choose a new username and {% endif %}set a strong password.</p>
+      <form method="POST" action="{{ url_for('auth.account_setup') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if need_username %}
+        <div style="margin-bottom:1rem;">
+          <label for="username" class="form-label">New Username</label>
+          <input id="username" name="username" type="text" class="form-control" value="{{ username }}" required autocomplete="username">
+        </div>
+        {% endif %}
+        {% if need_password %}
+        <div style="margin-bottom:1rem;">
+          <label for="new_password" class="form-label">New Password <small>(min {{ min_length }} characters)</small></label>
+          <input id="new_password" name="new_password" type="password" class="form-control" required autocomplete="new-password">
+        </div>
+        <div style="margin-bottom:1.25rem;">
+          <label for="confirm_password" class="form-label">Confirm Password</label>
+          <input id="confirm_password" name="confirm_password" type="password" class="form-control" required autocomplete="new-password">
+        </div>
+        {% endif %}
+        <button type="submit" class="btn btn-primary" style="width:100%;"><i data-lucide="check"></i> Save & Continue</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

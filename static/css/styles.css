@@ -1,0 +1,568 @@
+/* Self-hosted Inter (replaces the Google Fonts CDN <link> so the UI still
+   renders with the intended typeface when this box has no general internet
+   egress, which is common for network-management tools on isolated
+   management VLANs). Files vendored under static/vendor/fonts/. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../vendor/fonts/inter-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../vendor/fonts/inter-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../vendor/fonts/inter-600.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../vendor/fonts/inter-700.woff2') format('woff2');
+}
+
+/* Console / rack-panel theme, built from the EZ-Kea badge mark
+   (static/images/ezkea.jpg): its own charcoal background plus its two
+   brand signal colors — hub blue and key orange — in place of the
+   ubiquitous navy-blue-glass look. Neutrals stay hue-neutral (pure
+   black/white alpha) so nothing reads as "slate blue" by accident;
+   only the two brand hues carry color. */
+:root {
+  --bg: #13141a;
+  --surface: #1b1d23;
+  --surface-raised: #232530;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.17);
+
+  --text-primary: #f2f1ee;
+  --text-secondary: #96939c;
+
+  /* Brand accent 1 — hub blue, sampled from the logo's network-hub glyph
+     and "EZ" wordmark. Primary action/link color. */
+  --accent: #1ba1d8;
+  --accent-hover: #56c1ea;
+  --on-accent: #071b24;
+
+  /* Brand accent 2 — key orange, sampled from the logo's key glyph and
+     "KEA" wordmark. Used for the standalone/secondary signal tier. */
+  --brand-orange: #f58b1e;
+  --brand-orange-hover: #ffa847;
+
+  /* Legacy aliases: a handful of templates reference these names directly
+     with var(), so repointing them here keeps every surface in sync. */
+  --card-bg: var(--surface);
+  --card-header-bg: var(--surface-raised);
+  --card-border: var(--border);
+  --primary-blue: var(--accent);
+  --primary-blue-hover: var(--accent-hover);
+  --btn-primary-bg: var(--accent);
+  --btn-primary-bg-hover: var(--accent-hover);
+
+  --success-green: #10b981;
+  --standalone-accent: var(--brand-orange);
+  --danger-red: #ef4444;
+  --danger-red-hover: #dc2626;
+  --input-bg: rgba(0, 0, 0, 0.35);
+  --input-border: rgba(255, 255, 255, 0.13);
+
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 1400px 700px at 50% -12%, rgba(255, 255, 255, 0.03), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+}
+
+/* Layout Containers */
+.dashboard-content {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Components */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 20px -12px rgba(0, 0, 0, 0.6);
+}
+
+.card-header {
+  background: var(--card-header-bg);
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--card-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-header h2, .card-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+/* Typography & Links */
+a {
+  color: var(--primary-blue);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--text-primary);
+}
+
+/* Muted secondary text (helper copy, table meta, "None configured", etc.) */
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background-color: var(--btn-primary-bg);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background-color: var(--btn-primary-bg-hover);
+}
+
+.btn-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger-red);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.btn-danger:hover {
+  background-color: var(--danger-red);
+  color: white;
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: var(--card-border);
+  color: var(--text-primary);
+}
+
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Compact variant used throughout for inline row-level actions
+   (Delete, Options, Add Subnet To Group, etc.) so they don't render
+   at full button size and crowd table/card rows. */
+.btn-sm {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  gap: 0.35rem;
+  border-radius: 5px;
+}
+
+/* Utility: keeps a <form> from breaking layout flow when it wraps a
+   single inline action (e.g. a delete button next to a link). */
+.d-inline {
+  display: inline;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.form-control {
+  width: 100%;
+  padding: 0.625rem;
+  background-color: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+}
+
+/* Tables */
+.table-container {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--card-border);
+}
+
+th {
+  background-color: rgba(0, 0, 0, 0.3);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Table bodies read like a data grid (leases, MAC reservations, pools are
+   all addresses/identifiers) — monospace keeps IPs, MACs and CIDRs
+   aligned and legible. Reset back to the UI face for anything
+   interactive that ends up inside a cell. */
+tbody td {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+td .btn, td .badge, td select, td input, td a.btn {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+/* Alerts and Badges */
+.alert {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border: 1px solid transparent;
+}
+
+.alert-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.alert-success {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+.alert-warning {
+  background-color: rgba(245, 139, 30, 0.1);
+  border-color: rgba(245, 139, 30, 0.25);
+  color: #ffc978;
+}
+
+.alert-info,
+.alert-message {
+  background-color: rgba(27, 161, 216, 0.1);
+  border-color: rgba(27, 161, 216, 0.3);
+  color: #8ecdf0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-success {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--success-green);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+/* Navigation */
+.navbar {
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.navbar-container {
+  max-width: 1600px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 64px;
+}
+
+.navbar-brand {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Terminal-cursor flourish after the wordmark: a single deliberate
+   animated accent rather than motion scattered across the page. */
+.navbar-brand > span:first-child::after {
+  content: '_';
+  color: var(--accent);
+  margin-left: 0.1em;
+  animation: cursor-blink 1.1s steps(1) infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar-brand > span:first-child::after {
+    animation: none;
+  }
+}
+
+.navbar-nav {
+  display: flex;
+  gap: 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-link:hover, .nav-link.active {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Account dropdown — condenses profile/admin links (Users, License, Email
+   Settings, Logout) behind a single trigger so the navbar doesn't grow a
+   new top-level item every time an admin-only page is added. Same
+   click-to-toggle / click-outside-to-close interaction as auto-topology's
+   #account-menu, restyled to match this app's card look. */
+.navbar-account {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.navbar-account-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-secondary);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.navbar-account-btn:hover, .navbar-account-btn.open {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.navbar-account-btn .chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s;
+}
+
+.navbar-account-btn.open .chevron {
+  transform: rotate(180deg);
+}
+
+.navbar-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
+
+.navbar-dropdown.open {
+  display: block;
+}
+
+.navbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.navbar-dropdown-item:hover {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.navbar-dropdown-item i {
+  width: 16px;
+  height: 16px;
+}
+
+.navbar-dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 2px;
+}
+
+/* Responsive breakpoints ---------------------------------------------- */
+
+/* Tablet / narrow desktop: let the nav wrap onto a second line instead of
+   overflowing, and let page headers wrap their action buttons below the
+   title rather than squeezing everything onto one row. */
+@media (max-width: 900px) {
+  .navbar-container {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 0.75rem 0;
+    row-gap: 0.5rem;
+  }
+
+  .navbar-nav {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    width: 100%;
+  }
+
+  .nav-link {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+  }
+
+  .page-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+}
+
+/* Phone-width: shrink paddings and stack anything still forcing a
+   horizontal squeeze (buttons, dashboard content gutters). */
+@media (max-width: 600px) {
+  .dashboard-content {
+    padding: 12px;
+  }
+
+  .navbar-brand {
+    font-size: 1.05rem;
+  }
+
+  .navbar-brand span {
+    white-space: normal;
+  }
+
+  .page-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}EZ-Kea{% endblock %}</title>
+
+    <!-- Favicon / touch icons, cropped from the EZ-Kea badge mark (static/images/ezkea.jpg) -->
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icons/favicon.ico') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/icon-32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/icon-16.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+    <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', filename='icons/icon-512.png') }}">
+
+    <!-- Self-hosted Inter font + Lucide icons: vendored under static/vendor/
+         so the UI still renders correctly with no general internet egress
+         (common on isolated network-management VLANs). Pinned to lucide
+         v1.23.0 rather than tracking @latest. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='vendor/lucide/lucide.min.js') }}"></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="{{ url_for('main.system.index') }}" class="navbar-brand" style="display:flex;align-items:center;gap:1rem;">
+                <span><img src="{{ url_for('static', filename='icons/icon-64.png') }}" alt="" width="26" height="26" style="vertical-align:middle;border-radius:6px;"> EZ-Kea</span>
+                {% if ez_kea_mode == 'LIVE' %}
+                <span style="font-size:0.75rem;padding:0.2rem 0.6rem;border-radius:1rem;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);font-weight:600;display:flex;align-items:center;gap:0.25rem;">
+                    <div style="width:6px;height:6px;border-radius:50%;background:#10b981;box-shadow:0 0 4px #10b981;"></div> LIVE MODE
+                </span>
+                {% else %}
+                <span title="Local files only. Kea daemon not detected." style="font-size:0.75rem;padding:0.2rem 0.6rem;border-radius:1rem;background:rgba(245,139,30,0.15);color:#f58b1e;border:1px solid rgba(245,139,30,0.35);font-weight:600;display:flex;align-items:center;gap:0.25rem;">
+                    <div style="width:6px;height:6px;border-radius:50%;background:#f58b1e;box-shadow:0 0 4px #f58b1e;"></div> DEMO MODE
+                </span>
+                {% endif %}
+            </a>
+            
+            <ul class="navbar-nav">
+                <li><a href="{{ url_for('main.system.index') }}" class="nav-link"><i data-lucide="home"></i> Home</a></li>
+                <li><a href="{{ url_for('main.dhcp4.pools') }}" class="nav-link"><i data-lucide="network"></i> DHCPv4</a></li>
+                <li><a href="{{ url_for('main.dhcp6.pools6') }}" class="nav-link"><i data-lucide="globe"></i> DHCPv6</a></li>
+                <li><a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="nav-link"><i data-lucide="hard-drive"></i> Reservations</a></li>
+                <li><a href="{{ url_for('main.dhcp6.reservations6') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv6 Reservations</a></li>
+                <li><a href="{{ url_for('main.dhcp4.leases') }}" class="nav-link"><i data-lucide="list"></i> Leases</a></li>
+                <li><a href="{{ url_for('main.dhcp6.leases6') }}" class="nav-link"><i data-lucide="list"></i> IPv6 Leases</a></li>
+                <li><a href="{{ url_for('main.ha.high_availability') }}" class="nav-link"><i data-lucide="shield-check"></i> HA</a></li>
+                <li><a href="{{ url_for('main.system.global_settings') }}" class="nav-link"><i data-lucide="settings"></i> Settings</a></li>
+                <li><a href="{{ url_for('main.system.logs') }}" class="nav-link"><i data-lucide="terminal"></i> Logs</a></li>
+            </ul>
+            {% if current_user.is_authenticated %}
+            <div class="navbar-account" style="margin-left:auto;padding-left:1rem;border-left:1px solid rgba(255,255,255,0.1);">
+                <button type="button" class="navbar-account-btn" id="navAccountBtn" onclick="toggleAccountMenu(event)">
+                    <i data-lucide="user-circle"></i> {{ current_user.username }}
+                    <i data-lucide="chevron-down" class="chevron"></i>
+                </button>
+                <div class="navbar-dropdown" id="navAccountMenu">
+                    <a href="{{ url_for('auth.profile') }}" class="navbar-dropdown-item"><i data-lucide="user"></i> Profile</a>
+                    {% if current_user.is_admin %}
+                    <div class="navbar-dropdown-divider"></div>
+                    <a href="{{ url_for('auth.users') }}" class="navbar-dropdown-item"><i data-lucide="users"></i> Users</a>
+                    <a href="{{ url_for('auth.license_page') }}" class="navbar-dropdown-item"><i data-lucide="key"></i> License</a>
+                    <a href="{{ url_for('auth.email_settings') }}" class="navbar-dropdown-item"><i data-lucide="mail"></i> Email Settings</a>
+                    {% endif %}
+                    <div class="navbar-dropdown-divider"></div>
+                    <a href="{{ url_for('auth.logout') }}" class="navbar-dropdown-item"><i data-lucide="log-out"></i> Logout</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="dashboard-content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for cat, msg in messages %}
+        {% set icon = {'danger': 'alert-triangle', 'error': 'alert-triangle', 'success': 'check-circle', 'warning': 'alert-triangle', 'info': 'info', 'message': 'info'}.get(cat, 'info') %}
+        <div class="alert alert-{{ 'danger' if cat == 'error' else cat }}">
+          <i data-lucide="{{ icon }}" style="width:16px;height:16px;vertical-align:middle;"></i> {{ msg }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {# License / free-tier grace banner #}
+        {% if lease_status and lease_status.status == 'grace' %}
+        <div class="alert alert-warning" style="display:flex;align-items:center;gap:0.75rem;">
+          <i data-lucide="alert-triangle" style="width:18px;height:18px;flex-shrink:0;"></i>
+          <span>{{ lease_status.message }}
+            {% if current_user.is_authenticated and current_user.is_admin %}
+            <a href="{{ url_for('auth.license_page') }}" style="color:inherit;text-decoration:underline;">Enter a license key →</a>
+            {% endif %}
+          </span>
+        </div>
+        {% elif lease_status and lease_status.status == 'blocked' %}
+        <div class="alert alert-danger" style="display:flex;align-items:center;gap:0.75rem;">
+          <i data-lucide="lock" style="width:18px;height:18px;flex-shrink:0;"></i>
+          <span>{{ lease_status.message }}
+            {% if current_user.is_authenticated and current_user.is_admin %}
+            <a href="{{ url_for('auth.license_page') }}" style="color:inherit;text-decoration:underline;">Enter a license key →</a>
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        function toggleAccountMenu(e) {
+            e.stopPropagation();
+            document.getElementById('navAccountMenu').classList.toggle('open');
+            document.getElementById('navAccountBtn').classList.toggle('open');
+        }
+
+        document.addEventListener('click', function (e) {
+            const menu = document.getElementById('navAccountMenu');
+            const btn = document.getElementById('navAccountBtn');
+            if (!menu || !btn) return;
+            if (!e.target.closest('#navAccountMenu') && !e.target.closest('#navAccountBtn')) {
+                menu.classList.remove('open');
+                btn.classList.remove('open');
+            }
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                const menu = document.getElementById('navAccountMenu');
+                const btn = document.getElementById('navAccountBtn');
+                if (menu) menu.classList.remove('open');
+                if (btn) btn.classList.remove('open');
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
