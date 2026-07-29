@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}MAC Reservations - EZ-Kea{% endblock %}
+{% block title %}IPv4 Reservations - EZ-Kea{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1><i data-lucide="hard-drive"></i> MAC Reservations</h1>
+  <h1><i data-lucide="hard-drive"></i> IPv4 Reservations</h1>
   <div>
     <a href="{{ url_for('main.dhcp4.new_reservation') }}" class="btn btn-primary">
       <i data-lucide="plus"></i> New Reservation
@@ -75,8 +75,8 @@
     <div style="text-align: center; padding: 4rem 2rem;">
       <i data-lucide="inbox"
         style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
-      <h2>No MAC Reservations</h2>
-      <p style="color: var(--text-secondary); margin-bottom: 2rem;">There are currently no static IP assignments
+      <h2>No IPv4 Reservations</h2>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">There are currently no MAC-based reservations
         configured.</p>
       <a href="{{ url_for('main.dhcp4.new_reservation') }}" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 1.1rem;">
         <i data-lucide="plus" style="width: 20px; height: 20px;"></i> Add Reservation
