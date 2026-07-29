@@ -54,6 +54,33 @@ Screenshots of the [leases](docs/images/leases.png),
 [IPv6 pools](docs/images/pools6.png), and [log viewer](docs/images/logs.png)
 views. For the full feature list, see the [wiki](https://github.com/fenleytech/ez-kea/wiki).
 
+## EZ-Kea and Stork
+
+ISC, who write Kea, also maintain [Stork](https://stork.readthedocs.io) — free
+and open source, like Kea itself. The two tools solve different problems, so
+it's worth knowing which one fits yours.
+
+**Reach for Stork** if you're running an estate. It manages many Kea servers
+from one dashboard, covers BIND 9 as well as DHCP, exports metrics to
+Prometheus and Grafana, and reviews your configuration to suggest improvements.
+It's broader in scope than EZ-Kea, it's free at any scale, and it's built by the
+people who write the DHCP server itself. That reach comes with a footprint: a
+central server, an agent on every monitored machine, and a PostgreSQL database.
+Its Kea config editing also goes through Kea's command hooks, so those need to
+be loaded and a control channel configured.
+
+**Reach for EZ-Kea** if you have one or two DHCP servers and want a web UI in
+front of them in the next five minutes. It's a single Python process — no
+database server, no agents, nothing to deploy alongside it. It edits
+`kea-dhcp4.conf` and `kea-dhcp6.conf` directly, so it works against a stock Kea
+install with no hooks enabled, and it finds your running daemons instead of
+asking you to register them.
+
+The trade-offs, plainly: EZ-Kea manages the host it runs on, so a fleet means
+one instance per server. It doesn't touch BIND 9 and it exports no metrics. And
+past 100 active leases it needs a commercial license, where Stork is free at
+any size. If those matter to you, Stork is the better tool and you should use it.
+
 ## Quick start
 
 Requires **Python 3.10+**. ISC Kea is optional — without it, EZ-Kea starts in
