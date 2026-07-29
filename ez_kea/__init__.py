@@ -93,6 +93,32 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
     from .auth import auth_bp
     app.register_blueprint(auth_bp)
 
+    @app.url_defaults
+    def add_static_cache_buster(endpoint: str, values: dict) -> None:
+        """
+        Append a content-derived ?v= to every static URL.
+
+        Deployments are expected to serve /static/ with a long-lived,
+        immutable Cache-Control (see demo/nginx/demo.ezkea.com.conf), which is
+        what keeps origin bandwidth down. Without a version in the URL, though,
+        a CSS or JS change stays invisible to anyone holding a cached copy
+        until it expires — potentially weeks. Keying the URL on the file's
+        mtime means edited assets get a new URL, and therefore a new cache
+        entry, the moment they change.
+        """
+        if endpoint != "static" or "filename" not in values:
+            return
+        filename = values["filename"]
+        if not isinstance(filename, str):
+            return
+        try:
+            path = os.path.join(app.static_folder, filename)
+            values["v"] = str(int(os.path.getmtime(path)))
+        except (OSError, TypeError):
+            # Missing or unreadable file: emit the plain URL rather than break
+            # rendering over a cache optimisation.
+            pass
+
     @app.context_processor
     def inject_globals():
         from .license import check_lease_limit
