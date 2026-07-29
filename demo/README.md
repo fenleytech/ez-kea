@@ -1,6 +1,6 @@
 # EZ-Kea public demo
 
-Everything needed to run the demo at <https://kea.fenleytech.com> on a fully
+Everything needed to run the demo at <https://demo.ezkea.com> on a fully
 synthetic data set, resetting itself on a timer.
 
 | File | Purpose |

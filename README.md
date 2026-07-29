@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
-  <a href="https://kea.fenleytech.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
+  <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
   <img src="https://img.shields.io/badge/tests-231%20passing-brightgreen.svg" alt="231 tests">
 </p>
 
@@ -25,7 +25,7 @@ so you can model a network offline.
 
 ## Live demo
 
-**<https://kea.fenleytech.com>** — log in with `demo` / `demo`.
+**<https://demo.ezkea.com>** — log in with `demo` / `demo`.
 
 It's a shared sandbox running entirely synthetic data, and it resets to a
 clean state every 30 minutes, so feel free to create and delete whatever you
