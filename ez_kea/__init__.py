@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaleb Fenley
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 import os
 from typing import Any
 from flask import Flask

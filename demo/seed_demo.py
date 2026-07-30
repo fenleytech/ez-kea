@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Kaleb Fenley
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 """
 demo/seed_demo.py — build the public demo's data set from scratch.
 

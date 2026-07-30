@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaleb Fenley
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 from typing import Any, Dict, Optional, Union, Tuple
 from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app

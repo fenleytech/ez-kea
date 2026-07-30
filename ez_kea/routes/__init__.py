@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaleb Fenley
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 from flask import Blueprint
 
 main_bp = Blueprint('main', __name__)

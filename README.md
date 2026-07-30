@@ -106,6 +106,11 @@ The [LICENSE](LICENSE) file governs; the summary above is for orientation, not
 a substitute for it. Full details in
 [Licensing](https://github.com/fenleytech/ez-kea/wiki/Licensing).
 
+SPDX identifier: `PolyForm-Noncommercial-1.0.0`. Source files carry
+`SPDX-License-Identifier` headers, so license scanners and SBOM tooling
+identify EZ-Kea correctly. GitHub's sidebar reports "Other" because its
+detector only covers OSI-approved and FSF-libre licenses.
+
 ## Documentation
 
 The [wiki](https://github.com/fenleytech/ez-kea/wiki) covers the rest:

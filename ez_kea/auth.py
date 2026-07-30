@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kaleb Fenley
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 """ez_kea/auth.py — User authentication blueprint."""
 import io, json, base64, re, secrets, threading, time
 from datetime import datetime, timedelta

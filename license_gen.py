@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Kaleb Fenley
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 """
 license_gen.py — EZ-Kea license key generator (vendor-side CLI tool).
 Keep the private key OFFLINE and NEVER distribute it with the application.
