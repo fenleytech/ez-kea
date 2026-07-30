@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
-  <img src="https://img.shields.io/badge/tests-231%20passing-brightgreen.svg" alt="231 tests">
+  <img src="https://img.shields.io/badge/tests-236%20passing-brightgreen.svg" alt="236 tests">
 </p>
 
 ![EZ-Kea managing DHCPv4 shared networks and pools](docs/images/pools.png)
@@ -118,7 +118,7 @@ The [wiki](https://github.com/fenleytech/ez-kea/wiki) covers the rest:
 | [Security hardening](https://github.com/fenleytech/ez-kea/wiki/Security-Hardening) | Secret keys, 2FA, file permissions, exposure |
 | [High availability](https://github.com/fenleytech/ez-kea/wiki/High-Availability) | Setting up the Kea HA hook |
 | [Testbed](https://github.com/fenleytech/ez-kea/wiki/Testbed) | Containerized Kea for end-to-end testing |
-| [Licensing](https://github.com/fenleytech/ez-kea/wiki/Licensing) | Free tier, grace period, license keys |
+| [Licensing](https://github.com/fenleytech/ez-kea/wiki/Licensing) | What's free, when you need to pay, license keys |
 
 ## Support
 
