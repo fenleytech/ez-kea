@@ -35,7 +35,7 @@
 }
 
 /* Console / rack-panel theme, built from the EZ-Kea badge mark
-   (static/images/ezkea.jpg): its own charcoal background plus its two
+   (static/images/ez-kea-logo.png): its own charcoal background plus its two
    brand signal colors — hub blue and key orange — in place of the
    ubiquitous navy-blue-glass look. Neutrals stay hue-neutral (pure
    black/white alpha) so nothing reads as "slate blue" by accident;
@@ -50,14 +50,14 @@
   --text-primary: #f2f1ee;
   --text-secondary: #96939c;
 
-  /* Brand accent 1 — hub blue, sampled from the logo's network-hub glyph
-     and "EZ" wordmark. Primary action/link color. */
+  /* Brand accent 1 — hub blue, sampled from the logo's network-hub glyph.
+     Primary action/link color. */
   --accent: #1ba1d8;
   --accent-hover: #56c1ea;
   --on-accent: #071b24;
 
-  /* Brand accent 2 — key orange, sampled from the logo's key glyph and
-     "KEA" wordmark. Used for the standalone/secondary signal tier. */
+  /* Brand accent 2 — key orange, sampled from the logo's key glyph.
+     Used for the standalone/secondary signal tier. */
   --brand-orange: #f58b1e;
   --brand-orange-hover: #ffa847;
 

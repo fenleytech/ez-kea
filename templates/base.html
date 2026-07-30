@@ -6,7 +6,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}EZ-Kea{% endblock %}</title>
 
-    <!-- Favicon / touch icons, cropped from the EZ-Kea badge mark (static/images/ezkea.jpg) -->
+    <!-- Favicon / touch icons, downscaled from the EZ-Kea badge mark
+         (static/images/ez-kea-logo.png). Same source and same sizes as
+         ezkea.com/img/, so site and app render an identical mark. -->
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icons/favicon.ico') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/icon-32.png') }}">
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/icon-16.png') }}">
