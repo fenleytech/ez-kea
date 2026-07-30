@@ -369,7 +369,7 @@ There is no `DHCP6_CONFIG_FILE` config entry at all — every v6 route falls bac
 6. **CSRF protection** (see 1.4) — becomes a live attack vector the moment authenticated sessions exist.
 7. **Audit trail** — `save_json()` silently overwrites with no user attribution or change log; "who deleted this subnet and when" is currently unanswerable even after auth lands.
 8. **Licensing/entitlement hooks** — no license-check or feature-flag scaffold exists anywhere; land this before customers are running unlicensed copies.
-9. **RBAC / admin-vs-viewer role split** — every referenced competitor (Stork, phpIPAM, Infoblox, Men&Mice) ships role separation.
+9. **RBAC / admin-vs-viewer role split** — every referenced competitor (phpIPAM, Infoblox, Men&Mice) ships role separation.
 10. **Fix the DHCPv6 config-file disconnect** (5.1) before marketing "IPv4 and IPv6 support" — a live demo against a real dual-stack box would expose this immediately.
 
 ### 5.3 Strongly recommended (competitiveness/retention)

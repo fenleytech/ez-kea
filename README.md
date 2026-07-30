@@ -54,38 +54,6 @@ Screenshots of the [leases](docs/images/leases.png),
 [IPv6 pools](docs/images/pools6.png), and [log viewer](docs/images/logs.png)
 views. For the full feature list, see the [wiki](https://github.com/fenleytech/ez-kea/wiki).
 
-## EZ-Kea and Stork
-
-ISC, who write Kea, also maintain [Stork](https://stork.readthedocs.io) — free
-and open source, like Kea itself. The two tools solve different problems, so
-it's worth knowing which one fits yours.
-
-**Reach for Stork** if you're running an estate. It manages many Kea servers
-from one dashboard, covers BIND 9 as well as DHCP, exports metrics to
-Prometheus and Grafana, and reviews your configuration to suggest improvements.
-It's broader in scope than EZ-Kea, it's free at any scale, and it's built by the
-people who write the DHCP server itself. That reach comes with a footprint: a
-central server, an agent on every monitored machine, and a PostgreSQL database.
-
-Its Kea configuration editing also works through Kea's `subnet_cmds` and
-`host_cmds` hook libraries. Those were relicensed as open source in Kea 3.0,
-but they are not in most distributions' packages yet — Ubuntu 24.04 LTS ships
-Kea 2.4.1 and Debian 13 ships 2.6.3, and neither includes those two hooks. On
-a distro-packaged Kea, then, Stork monitors happily but cannot edit your
-subnets or reservations until you move to ISC's own repository and a newer Kea.
-
-**Reach for EZ-Kea** if you have one or two DHCP servers and want a web UI in
-front of them in the next five minutes. It's a single Python process — no
-database server, no agents, nothing to deploy alongside it. It edits
-`kea-dhcp4.conf` and `kea-dhcp6.conf` directly, which means **it needs no hook
-libraries at all** and works on whatever Kea your distribution already ships.
-It finds your running daemons rather than asking you to register them.
-
-The trade-offs, plainly: EZ-Kea manages the host it runs on, so a fleet means
-one instance per server. It doesn't touch BIND 9 and it exports no metrics. And
-past 100 active leases it needs a commercial license, where Stork is free at
-any size. If those matter to you, Stork is the better tool and you should use it.
-
 ## Quick start
 
 Requires **Python 3.10+**. ISC Kea is optional — without it, EZ-Kea starts in
