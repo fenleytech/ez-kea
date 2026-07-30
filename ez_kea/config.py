@@ -16,6 +16,17 @@ class Config:
     DHCP6_LEASES_FILE = os.getenv("DHCP6_LEASES_FILE", "./data/kea-leases6.csv")
     DHCP6_LOG_FILE    = os.getenv("DHCP6_LOG_FILE",    "./data/kea-dhcp6.log")
 
+    # --- Public demo --------------------------------------------------------
+    # Off unless explicitly switched on, and the only thing that switches it on
+    # is demo/systemd/ez-kea-demo.service. When set, the login page arrives with
+    # the published demo credentials already in the fields: a visitor still sees
+    # the real login screen (which is part of what the demo is showing off) but
+    # doesn't have to go hunting for a password to get past it. Never enable
+    # this on a deployment that manages a real network.
+    PUBLIC_DEMO          = os.getenv("PUBLIC_DEMO", "").strip().lower() in ("1", "true", "yes", "on")
+    PUBLIC_DEMO_USERNAME = os.getenv("PUBLIC_DEMO_USERNAME", "demo")
+    PUBLIC_DEMO_PASSWORD = os.getenv("PUBLIC_DEMO_PASSWORD", "demo")
+
     BACKUP_DIR       = os.getenv("BACKUP_DIR",       "./data/backups/")
     SETTINGS_FILE    = os.getenv("SETTINGS_FILE",    "./data/ez-kea-settings.json")
     SECRET_KEY       = os.getenv("SECRET_KEY",       "dev")

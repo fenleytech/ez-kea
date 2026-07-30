@@ -152,8 +152,24 @@ awk '{sum+=$10} END {print sum/1048576 " MiB served"}' \
 
 ## Changing the demo credentials
 
-The published credentials are `demo` / `demo`. To change them, edit
-`DEMO_USER` / `DEMO_PASSWORD` in `systemd/ez-kea-demo-reset.service`, run a
-reset, and update the README's Live Demo section to match — the account is
-recreated from those values on every reset, so changing them anywhere else
-gets overwritten within 30 minutes.
+The published credentials are `demo` / `demo`, and they live in **two** places
+that have to agree:
+
+- `DEMO_USER` / `DEMO_PASSWORD` in `systemd/ez-kea-demo-reset.service` — the
+  account `seed_demo.py` actually creates.
+- `PUBLIC_DEMO_USERNAME` / `PUBLIC_DEMO_PASSWORD` in
+  `systemd/ez-kea-demo.service` — what the login page pre-fills.
+
+To change them, edit both, `systemctl daemon-reload`, run a reset, and update
+the README's Live Demo section to match. The account is recreated from the
+reset unit's values on every reset, so changing the password anywhere else
+gets overwritten within 30 minutes; get the two out of sync and the pre-filled
+form simply fails to log in.
+
+## Pre-filled login
+
+`PUBLIC_DEMO=1` in `systemd/ez-kea-demo.service` is what puts those credentials
+into the login form. The login screen is still rendered — it's part of what
+visitors are there to see — they just don't have to hunt for a password to get
+past it. The flag is off by default and is read only from the environment, so
+no ordinary install can end up advertising credentials on its login page.

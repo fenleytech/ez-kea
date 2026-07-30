@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
-  <img src="https://img.shields.io/badge/tests-236%20passing-brightgreen.svg" alt="236 tests">
+  <img src="https://img.shields.io/badge/tests-254%20passing-brightgreen.svg" alt="254 tests">
 </p>
 
 ![EZ-Kea managing DHCPv4 shared networks and pools](docs/images/pools.png)
@@ -25,7 +25,8 @@ so you can model a network offline.
 
 ## Live demo
 
-**<https://demo.ezkea.com>** — log in with `demo` / `demo`.
+**<https://demo.ezkea.com>** — the login form arrives pre-filled with the demo
+account (`demo` / `demo`), so just press Sign In.
 
 It's a shared sandbox running entirely synthetic data, and it resets to a
 clean state every 30 minutes, so feel free to create and delete whatever you

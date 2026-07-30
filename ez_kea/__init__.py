@@ -135,6 +135,17 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
         return dict(
             ez_kea_mode=app.config.get("EZ-Kea_MODE", "LIVE"),
             license_state=license_status(active),
+            # Only truthy on the public demo (see Config.PUBLIC_DEMO), where
+            # the login page pre-fills these. Absent everywhere else, so no
+            # ordinary install can leak a credential hint into its login page.
+            public_demo=(
+                {
+                    "username": app.config.get("PUBLIC_DEMO_USERNAME", ""),
+                    "password": app.config.get("PUBLIC_DEMO_PASSWORD", ""),
+                }
+                if app.config.get("PUBLIC_DEMO")
+                else None
+            ),
         )
 
     return app

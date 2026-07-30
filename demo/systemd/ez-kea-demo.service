@@ -23,6 +23,14 @@ Environment=BACKUP_DIR=/srv/ez-kea-demo/data/backups/
 Environment=DHCP_CONFIG_FILE=/srv/ez-kea-demo/data/kea-dhcp4.conf
 Environment=DHCP6_CONFIG_FILE=/srv/ez-kea-demo/data/kea-dhcp6.conf
 
+# Show the login screen — visitors should see it — but arrive with the published
+# demo account already typed in, so nobody bounces off a password prompt. These
+# must match what seed_demo.py wrote into the demo database; see demo/README.md
+# ("Changing the demo credentials"). Only ever set on the public demo.
+Environment=PUBLIC_DEMO=1
+Environment=PUBLIC_DEMO_USERNAME=demo
+Environment=PUBLIC_DEMO_PASSWORD=demo
+
 # SECRET_KEY lives here, not in the unit file. Create it once with:
 #   install -o ezkea -g ezkea -m 0600 /dev/null /etc/ez-kea-demo.env
 #   echo "SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))')" >> /etc/ez-kea-demo.env
