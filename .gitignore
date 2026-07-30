@@ -66,3 +66,6 @@ keys/
 # kea-dhcp4.conf.example and pre-seeded ez-kea-settings.json stay tracked.
 testbed/data/var/
 testbed/data/etc/kea/kea-dhcp4.conf
+
+# Local agent context — machine-specific notes, not part of the product
+CLAUDE.md
