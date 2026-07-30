@@ -4,7 +4,6 @@ from flask import Blueprint, render_template, request, redirect, url_for, curren
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_json, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_duid, has_overlap, return_available_ips, get_active_leases, get_active_leases6, unix_to_human_readable, sanitize_hostname
-from ..license import license_gate
 import ipaddress
 
 dhcp6_bp = Blueprint('dhcp6', __name__)
@@ -53,7 +52,6 @@ def pools6() -> str:
 
 @dhcp6_bp.route("/new-shared-network6", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def new_shared_network6() -> Union[str, Response]:
     """Create a new DHCPv6 shared network and save it to the config."""
@@ -83,7 +81,6 @@ def new_shared_network6() -> Union[str, Response]:
 
 @dhcp6_bp.route("/delete-shared-network6", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def delete_shared_network6() -> Response:
     """Remove a specified shared network from the DHCPv6 configuration."""
@@ -101,7 +98,6 @@ def delete_shared_network6() -> Response:
 
 @dhcp6_bp.route("/new-subnet6", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
     """Create a new DHCPv6 subnet entry, validating its address and prefix delegation."""
@@ -210,7 +206,6 @@ def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
 
 @dhcp6_bp.route("/delete-subnet6", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def delete_subnet6() -> Response:
     """Delete a specific subnet from a shared network in DHCPv6."""
@@ -287,7 +282,6 @@ def reservations6() -> str:
 
 @dhcp6_bp.route("/new-reservation6", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def new_reservation6() -> Union[str, Response, Tuple[str, int]]:
     """Add a new DUID-based reservation for a specific IPv6 address and/or delegated prefix."""
@@ -350,7 +344,6 @@ def new_reservation6() -> Union[str, Response, Tuple[str, int]]:
 
 @dhcp6_bp.route("/delete-reservation6", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def delete_reservation6() -> Response:
     """Delete a DUID-based reservation, from either a standalone subnet or

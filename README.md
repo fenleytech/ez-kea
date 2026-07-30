@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
   <img src="https://img.shields.io/badge/tests-231%20passing-brightgreen.svg" alt="231 tests">
@@ -87,17 +87,23 @@ Docker-based Kea deployments are all covered in the
 
 ## Licensing
 
-The source in this repository is MIT licensed. The application it builds is
-open-core, and it's worth knowing where the line sits before you deploy it:
+EZ-Kea is source-available under the
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+license. In plain terms:
 
-- **Free tier** — every feature, up to **100 active DHCP leases**.
-- Past 100 leases, a banner appears and a **7-day grace period** starts.
-- After the grace period, **configuration changes are blocked** until a
-  commercial license key is entered. Existing config stays readable and Kea
-  keeps serving DHCP — EZ-Kea never stops your DHCP server, it only stops
-  editing it.
+- **Free for noncommercial use** — every feature, no limits, no lease ceiling,
+  nothing gated. Homelabs, personal networks, hobby projects, learning and
+  experimentation, plus charities, schools, and government bodies.
+- **Commercial use requires a license.** If EZ-Kea manages DHCP for a business,
+  or you're paid to run it for someone, email **<sales@ezkea.com>**.
 
-For a commercial license, email **<sales@ezkea.com>**. Full details in
+Unlicensed installations show a quiet note in the footer, and installs above
+100 active leases get a visible reminder. That's the whole of it — **EZ-Kea
+never blocks, degrades, or expires anything**. It won't lock you out of your
+own DHCP configuration, licensed or not.
+
+The [LICENSE](LICENSE) file governs; the summary above is for orientation, not
+a substitute for it. Full details in
 [Licensing](https://github.com/fenleytech/ez-kea/wiki/Licensing).
 
 ## Documentation
@@ -119,10 +125,9 @@ The [wiki](https://github.com/fenleytech/ez-kea/wiki) covers the rest:
 - **Bugs and feature requests** — [GitHub Issues](https://github.com/fenleytech/ez-kea/issues)
 - **Commercial licensing** — <sales@ezkea.com>
 
-## Contributing
+## Development
 
-Contributions are welcome. The test suite runs with no Kea installation and no
-network access:
+The test suite runs with no Kea installation and no network access:
 
 ```bash
 pip install -r requirements.txt
@@ -130,16 +135,21 @@ python -m pytest
 ```
 
 There's also a containerized ISC Kea testbed that boots a real DHCP server on
-two virtual VLANs and drives actual DHCP transactions against it:
+two virtual VLANs and drives actual DHCP transactions against it — see
+[testbed/README.md](testbed/README.md):
 
 ```bash
 cd testbed && bash test_suite.sh
 ```
 
-See [testbed/README.md](testbed/README.md) and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Bug reports and feature requests are genuinely welcome via
+[Issues](https://github.com/fenleytech/ez-kea/issues). Pull requests aren't
+being accepted — EZ-Kea is also sold under a commercial license, which means
+merged code needs a licensing arrangement with each contributor, and that
+overhead isn't worth it for a project this size. A good bug report helps more.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Note the free-tier lease limit described under
-[Licensing](#licensing) above.
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+— see [LICENSE](LICENSE). Free for noncommercial use; commercial use requires a
+license, see [Licensing](#licensing) above.

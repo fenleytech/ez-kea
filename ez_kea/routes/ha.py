@@ -17,7 +17,6 @@ from ..core.ha_manager import (
     DEFAULT_HA_LIBRARY_PATH,
 )
 from ..core.kea_ctrl import send_command, ControlChannelError
-from ..license import license_gate
 
 ha_bp = Blueprint('ha', __name__)
 
@@ -64,7 +63,6 @@ def _save_ha(dhcp_key: str, config_file: str) -> Response:
 
 @ha_bp.route("/save-ha-config", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def save_ha_config() -> Response:
     """Save the DHCPv4 High Availability hook configuration."""
@@ -73,7 +71,6 @@ def save_ha_config() -> Response:
 
 @ha_bp.route("/save-ha-config6", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def save_ha_config6() -> Response:
     """Save the DHCPv6 High Availability hook configuration."""

@@ -12,7 +12,6 @@ from ..core.config_manager import (
 )
 from ..core.settings_manager import load_settings, save_settings
 from ..core.security import validate_kea_command, validate_log_file_path, InvalidKeaCommandError, InvalidLogPathError
-from ..license import license_gate
 
 system_bp = Blueprint('system', __name__)
 
@@ -211,7 +210,6 @@ def backup_config(version: str = "4") -> Union[Response, Tuple[Response, int]]:
 @system_bp.route("/restore-config", methods=["POST"])
 @system_bp.route("/restore-config/<version>", methods=["POST"])
 @login_required
-@license_gate
 def restore_config(version: str = "4") -> Union[Response, Tuple[Response, int]]:
     """Restore Kea configuration (v4 or v6) from the most recent backup."""
     if version not in ("4", "6"):
@@ -652,7 +650,6 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
 
 @system_bp.route("/save-global-settings", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def save_global_settings() -> Union[Response, Tuple[str, int]]:
     """Save user-updated DHCPv4 global configuration parameters."""
@@ -660,7 +657,6 @@ def save_global_settings() -> Union[Response, Tuple[str, int]]:
 
 @system_bp.route("/save-global-settings/<version>", methods=["POST"])
 @login_required
-@license_gate
 def save_global_settings_version(version: str) -> Union[Response, Tuple[str, int]]:
     """Save user-updated global configuration parameters for the given version (4 or 6)."""
     if version not in ("4", "6"):

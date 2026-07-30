@@ -85,22 +85,14 @@
         {% endif %}
         {% endwith %}
 
-        {# License / free-tier grace banner #}
-        {% if lease_status and lease_status.status == 'grace' %}
-        <div class="alert alert-warning" style="display:flex;align-items:center;gap:0.75rem;">
-          <i data-lucide="alert-triangle" style="width:18px;height:18px;flex-shrink:0;"></i>
-          <span>{{ lease_status.message }}
+        {# Licensing reminder for larger (probably commercial) installs.
+           Informational only — nothing in EZ-Kea is gated on licensing. #}
+        {% if license_state and license_state.banner %}
+        <div class="alert alert-info" style="display:flex;align-items:center;gap:0.75rem;">
+          <i data-lucide="info" style="width:18px;height:18px;flex-shrink:0;"></i>
+          <span>{{ license_state.banner }}
             {% if current_user.is_authenticated and current_user.is_admin %}
-            <a href="{{ url_for('auth.license_page') }}" style="color:inherit;text-decoration:underline;">Enter a license key →</a>
-            {% endif %}
-          </span>
-        </div>
-        {% elif lease_status and lease_status.status == 'blocked' %}
-        <div class="alert alert-danger" style="display:flex;align-items:center;gap:0.75rem;">
-          <i data-lucide="lock" style="width:18px;height:18px;flex-shrink:0;"></i>
-          <span>{{ lease_status.message }}
-            {% if current_user.is_authenticated and current_user.is_admin %}
-            <a href="{{ url_for('auth.license_page') }}" style="color:inherit;text-decoration:underline;">Enter a license key →</a>
+            <a href="{{ url_for('auth.license_page') }}" style="color:inherit;text-decoration:underline;">Licensing →</a>
             {% endif %}
           </span>
         </div>
@@ -108,6 +100,15 @@
 
         {% block content %}{% endblock %}
     </main>
+
+    {% if license_state and license_state.notice %}
+    <footer style="max-width:1200px;margin:2rem auto 1rem;padding:0 1.5rem;font-size:0.8rem;opacity:0.55;text-align:center;">
+      {{ license_state.notice }}
+      {% if current_user.is_authenticated and current_user.is_admin %}
+      <a href="{{ url_for('auth.license_page') }}" style="color:inherit;">Details</a>
+      {% endif %}
+    </footer>
+    {% endif %}
 
     <script>
         // Initialize Lucide icons

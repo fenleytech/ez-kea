@@ -121,16 +121,17 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
 
     @app.context_processor
     def inject_globals():
-        from .license import check_lease_limit
+        from .license import license_status
         from .core.validation import get_active_leases
         try:
             active = len(get_active_leases(app.config.get("DHCP_LEASES_FILE", "")))
-            lease_status = check_lease_limit(active)
         except Exception:
-            lease_status = {"status": "ok", "grace_days_remaining": 0, "message": ""}
+            # The lease count only decides how loudly the unlicensed notice is
+            # shown, so an unreadable leases file just means "no banner".
+            active = 0
         return dict(
             ez_kea_mode=app.config.get("EZ-Kea_MODE", "LIVE"),
-            lease_status=lease_status,
+            license_state=license_status(active),
         )
 
     return app

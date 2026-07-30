@@ -558,11 +558,11 @@ def profile_2fa_disable():
 def license_page():
     if not current_user.is_admin:
         abort(403)
-    from .license import get_license, clear_grace_period
+    from .license import get_license, parse_license
     message = None
     if request.method == "POST":
         key_str = (request.form.get("license_key") or "").strip()
-        result  = get_license.__module__ and __import__("ez_kea.license", fromlist=["parse_license"]).parse_license(key_str)
+        result  = parse_license(key_str)
         if result.get("valid"):
             row = SystemSetting.query.get("license_key")
             if row is None:
@@ -571,7 +571,6 @@ def license_page():
             else:
                 row.value = key_str
             db.session.commit()
-            clear_grace_period()
             flash("License activated successfully.", "success")
         else:
             flash(f"Invalid license: {result.get('error')}", "error")

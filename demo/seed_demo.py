@@ -40,9 +40,9 @@ RNG = random.Random(20260729)
 DEFAULT_DEMO_USERNAME = "demo"
 DEFAULT_DEMO_PASSWORD = "demo"
 
-# The free tier blocks config writes above 100 active leases (see
-# ez_kea/license.py FREE_TIER_LEASE_LIMIT). The demo deliberately sits well
-# under that so visitors see the product working, not a licensing banner.
+# Above 100 active leases EZ-Kea shows a licensing reminder banner (see
+# ez_kea/license.py NAG_LEASE_THRESHOLD). Nothing is blocked, but the demo
+# sits well under it so visitors see the product, not a licensing notice.
 TARGET_ACTIVE_LEASES4 = 62
 
 DNS_PRIMARY = "10.20.10.10"
@@ -355,7 +355,7 @@ def build_leases4(now: int) -> list:
 
     assert len(rows) == TARGET_ACTIVE_LEASES4, (
         f"expected {TARGET_ACTIVE_LEASES4} leases, built {len(rows)} — keep the "
-        "demo under ez_kea.license.FREE_TIER_LEASE_LIMIT"
+        "demo under ez_kea.license.NAG_LEASE_THRESHOLD"
     )
     return rows
 

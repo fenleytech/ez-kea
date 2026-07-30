@@ -4,7 +4,6 @@ from flask import Blueprint, render_template, request, redirect, url_for, curren
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_json, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_ipv4_address, has_overlap, return_available_ips, get_active_leases, sanitize_hostname
-from ..license import license_gate
 
 dhcp4_bp = Blueprint('dhcp4', __name__)
 
@@ -38,7 +37,6 @@ def pools() -> str:
 
 @dhcp4_bp.route("/new-shared-network", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def new_shared_network() -> Union[str, Response]:
     """Create a new DHCPv4 shared network and save it to the configuration."""
@@ -67,7 +65,6 @@ def new_shared_network() -> Union[str, Response]:
 
 @dhcp4_bp.route("/delete-shared-network", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def delete_shared_network() -> Response:
     """Remove a specified shared network from the DHCPv4 configuration."""
@@ -84,7 +81,6 @@ def delete_shared_network() -> Response:
 
 @dhcp4_bp.route("/new-subnet", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def new_subnet() -> Union[str, Response, Tuple[str, int]]:
     """Create a new subnet entry, validating its address and overlapping range."""
@@ -159,7 +155,6 @@ def new_subnet() -> Union[str, Response, Tuple[str, int]]:
 
 @dhcp4_bp.route("/delete-subnet", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def delete_subnet() -> Response:
     """Delete a specific subnet from a shared network or standalone list."""
@@ -234,7 +229,6 @@ def mac_reservations() -> str:
 
 @dhcp4_bp.route("/new-reservation", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def new_reservation() -> Union[str, Response, Tuple[str, int]]:
     """Add a new static DHCP reservation for a specific MAC address."""
@@ -283,7 +277,6 @@ def new_reservation() -> Union[str, Response, Tuple[str, int]]:
 
 @dhcp4_bp.route("/delete-reservation", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def delete_reservation() -> Response:
     """Delete a static MAC-based IP reservation, from either a standalone

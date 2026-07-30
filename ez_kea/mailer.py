@@ -3,7 +3,7 @@ ez_kea/mailer.py
 
 Minimal, dependency-free SMTP mailer for EZ-Kea. Settings are stored as
 key/value rows in the existing SystemSetting table (same table/pattern
-license.py uses for license_key/grace_period_start) -- no new table needed.
+license.py uses for license_key) -- no new table needed.
 
 Settings keys used (all read via get_settings_dict()):
   smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_tls,
@@ -33,7 +33,7 @@ def get_settings_dict() -> dict:
 
 def _set_setting(key: str, value: str) -> None:
     """Write a single SystemSetting row, matching the get-or-create pattern
-    used by license.py's set_grace_period_start()/clear_grace_period()."""
+    used by license.py to persist the license key."""
     from . import db
     from .models import SystemSetting
     row = SystemSetting.query.get(key)
@@ -91,10 +91,10 @@ def _smtp_connect(settings: dict):
 
 
 def send_password_reset_email(user, reset_url: str, settings: dict) -> tuple[bool, str]:
-    """Email a self-service password-reset link. Deliberately NOT gated
-    behind is_licensed() (unlike a "real" product would gate other outbound
-    mail) -- account recovery has to keep working even on a lapsed/unlicensed
-    install, or a locked-out admin there would have no way back in at all.
+    """Email a self-service password-reset link. Not gated behind is_licensed()
+    -- nothing in EZ-Kea is (see license.py) -- and account recovery is the
+    last thing that should be: a locked-out admin on an unlicensed install
+    would otherwise have no way back in at all.
     """
     smtp_host = settings.get("smtp_host", "").strip()
     if not smtp_host:

@@ -29,8 +29,9 @@ can't enter a bogus license key or point SMTP at a mail server they control.
 
 ## What's in the seed
 
-A fictional mid-size office, sized to stay well under the 100-lease free-tier
-limit so the demo shows the product rather than a licensing banner:
+A fictional mid-size office, sized to stay well under the 100-lease threshold
+where the licensing reminder banner appears, so the demo shows the product
+rather than a licensing notice:
 
 - **`corp-campus`** (shared network) — `10.20.10.0/24` and `10.20.20.0/24`
 - **`voice-vlan30`** (shared network) — `10.20.30.0/24`, with TFTP and TR-069

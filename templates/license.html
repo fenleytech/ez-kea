@@ -6,14 +6,21 @@
   <div class="card-header"><h2>Current License Status</h2></div>
   <div class="card-body">
     {% if lic.valid %}
-    <p style="color:#10b981;"><i data-lucide="check-circle" style="vertical-align:middle;"></i> <strong>Active</strong> — licensed to {{ lic.licensee }}</p>
+    <p style="color:#10b981;"><i data-lucide="check-circle" style="vertical-align:middle;"></i> <strong>Commercial license active</strong> — licensed to {{ lic.licensee }}</p>
     <table style="margin-top:1rem;border-collapse:collapse;width:100%;">
       <tr><td style="padding:0.4rem 0;opacity:0.7;width:140px;">Expires</td><td>{{ lic.expires }} ({{ lic.days_remaining }} days remaining)</td></tr>
-      <tr><td style="padding:0.4rem 0;opacity:0.7;">Max Leases</td><td>{{ 'Unlimited' if lic.max_leases == 0 else lic.max_leases }}</td></tr>
       <tr><td style="padding:0.4rem 0;opacity:0.7;">License ID</td><td><code>{{ lic.license_id }}</code></td></tr>
     </table>
     {% else %}
-    <p style="opacity:0.7;">Free tier — all features available up to 100 active leases.{% if lic.error %} ({{ lic.error }}){% endif %}</p>
+    <p><strong>No commercial license installed.</strong></p>
+    <p style="opacity:0.7;margin-top:0.5rem;">EZ-Kea is licensed under
+      <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>.
+      Every feature is free, with no limits, for personal and other noncommercial
+      use — homelabs, hobby projects, learning, and use by charities, schools,
+      and government bodies.</p>
+    <p style="opacity:0.7;margin-top:0.5rem;">Using EZ-Kea in or for a business
+      requires a commercial license. Email
+      <a href="mailto:sales@ezkea.com">sales@ezkea.com</a>.</p>
     {% endif %}
     <hr style="margin:1.5rem 0;border-color:rgba(255,255,255,0.1);">
     <h3 style="font-size:1rem;margin-bottom:0.75rem;">Enter License Key</h3>

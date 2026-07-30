@@ -4,14 +4,12 @@ from flask import Blueprint, render_template, request, redirect, url_for, curren
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_json, with_config_lock
 from ..core.validation import validate_option_data
-from ..license import license_gate
 from .dhcp6 import _find_subnet6
 
 options_bp = Blueprint('options', __name__)
 
 @options_bp.route("/options/subnet4/<shared_network_name>/<path:subnet>", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def manage_subnet4_options(shared_network_name: str, subnet: str) -> Union[str, Response, Tuple[str, int]]:
     """Manage DHCP options for a given subnet within a shared network."""
@@ -67,7 +65,6 @@ def manage_subnet4_options(shared_network_name: str, subnet: str) -> Union[str, 
                          
 @options_bp.route("/options/subnet4/<shared_network_name>/<path:subnet>/delete", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def delete_subnet4_option(shared_network_name: str, subnet: str) -> Response:
     """Delete a DHCP option from a specific subnet in a shared network."""
@@ -90,7 +87,6 @@ def delete_subnet4_option(shared_network_name: str, subnet: str) -> Response:
 
 @options_bp.route("/options/subnet4/standalone/<path:subnet>", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def manage_standalone_subnet4_options(subnet: str) -> Union[str, Response, Tuple[str, int]]:
     """Options for subnets that live directly under Dhcp4 (not in a shared-network)."""
@@ -134,7 +130,6 @@ def manage_standalone_subnet4_options(subnet: str) -> Union[str, Response, Tuple
 
 @options_bp.route("/options/subnet4/standalone/<path:subnet>/delete", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock()
 def delete_standalone_subnet4_option(subnet: str) -> Response:
     """Delete a DHCP option from a standalone subnet."""
@@ -152,7 +147,6 @@ def delete_standalone_subnet4_option(subnet: str) -> Response:
 
 @options_bp.route("/options/subnet6/<shared_network_name>/<path:subnet>", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def manage_subnet6_options(shared_network_name: str, subnet: str) -> Union[str, Response, Tuple[str, int]]:
     """Manage DHCPv6 options for a given subnet within a shared network."""
@@ -196,7 +190,6 @@ def manage_subnet6_options(shared_network_name: str, subnet: str) -> Union[str, 
 
 @options_bp.route("/options/subnet6/<shared_network_name>/<path:subnet>/delete", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def delete_subnet6_option(shared_network_name: str, subnet: str) -> Response:
     """Delete a DHCPv6 option from a specific subnet in a shared network."""
@@ -215,7 +208,6 @@ def delete_subnet6_option(shared_network_name: str, subnet: str) -> Response:
 
 @options_bp.route("/options/subnet6/standalone/<path:subnet>", methods=["GET", "POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def manage_standalone_subnet6_options(subnet: str) -> Union[str, Response, Tuple[str, int]]:
     """Options for subnet6s that live directly under Dhcp6 (not in a shared-network)."""
@@ -254,7 +246,6 @@ def manage_standalone_subnet6_options(subnet: str) -> Union[str, Response, Tuple
 
 @options_bp.route("/options/subnet6/standalone/<path:subnet>/delete", methods=["POST"])
 @login_required
-@license_gate
 @with_config_lock("DHCP6_CONFIG_FILE")
 def delete_standalone_subnet6_option(subnet: str) -> Response:
     """Delete a DHCPv6 option from a standalone subnet."""
