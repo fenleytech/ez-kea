@@ -4,7 +4,7 @@
 """
 ez_kea/models.py
 
-SQLAlchemy models for EZ-Kea user authentication, licensing, and settings.
+SQLAlchemy models for EZ-KEA user authentication, licensing, and settings.
 """
 from datetime import datetime
 from flask_login import UserMixin

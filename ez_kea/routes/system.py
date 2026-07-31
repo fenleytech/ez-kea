@@ -66,7 +66,7 @@ def _global_settings_field_names(version: str) -> Dict[str, str]:
 # --- Docker-deployment helpers ----------------------------------------------
 # These centralize the "host path vs. in-container path" and "which container"
 # concerns so /test-config, /apply-config, and /save-global-settings agree on
-# them. See AUDIT_FINDINGS.md section 2.3 for the failure modes this fixes.
+# them.
 
 def _resolve_daemon_config(version: str) -> Dict[str, str]:
     """
@@ -105,7 +105,7 @@ def _in_container_config_path(daemon: Dict[str, str]) -> str:
     """
     Path to pass to `-t` when invoking a Kea DHCP daemon command.
 
-    Distinct from the host-side config path EZ-Kea itself reads/writes
+    Distinct from the host-side config path EZ-KEA itself reads/writes
     because when the command execs into a Docker container (`docker exec
     <container> kea-dhcp4|kea-dhcp6`), the binary runs inside the container's
     own filesystem namespace, where the host path may not exist. Falls back
@@ -153,7 +153,7 @@ def _dir_exists(path: str) -> bool:
     """
     Check whether the parent directory of `path` exists, from the correct
     filesystem perspective: inside the Kea container if one is configured or
-    discoverable (Docker deployments), else on the host running EZ-Kea.
+    discoverable (Docker deployments), else on the host running EZ-KEA.
     """
     directory = os.path.dirname(path) or "."
     container = _docker_container_hint()
@@ -171,7 +171,7 @@ def _dir_exists(path: str) -> bool:
 
 def _log_file_for_viewing(version: str = "4") -> str:
     """
-    Path EZ-Kea's own (host-side) /logs viewer should open, for the given
+    Path EZ-KEA's own (host-side) /logs viewer should open, for the given
     DHCP version (4 or 6; defaults to 4 for the existing /logs route).
 
     When a distinct in-container log path is configured (Docker deployments —
@@ -180,7 +180,7 @@ def _log_file_for_viewing(version: str = "4") -> str:
     trust our own DHCP_LOG_FILE setting instead of re-reading it back out of
     the Kea config. Bare-metal/non-Docker installs (no in-container path
     configured) keep the old behavior of trusting whatever's actually in the
-    Kea config, in case it was hand-edited outside EZ-Kea.
+    Kea config, in case it was hand-edited outside EZ-KEA.
     """
     daemon = _resolve_daemon_config(version)
     if daemon["log_file_in_container"].strip():
@@ -622,8 +622,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
     current_config_file = daemon["config_file"]
 
     # ── Validate security-sensitive fields up front. Any failure here aborts
-    # the whole save with no changes written anywhere (see AUDIT_FINDINGS.md
-    # 1.1 and 1.2) ────────────────────────────────────────────────────────
+    # the whole save with no changes written anywhere. ────────────────────
     errors = []
 
     # Only (re-)validate a command field when it's actually being changed. If we
@@ -663,12 +662,11 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
             flash(e, "danger")
         return redirect(url_for(redirect_endpoint, **redirect_kwargs))
 
-    # ── Config-file repoint is a distinct action, not a save (AUDIT_FINDINGS.md
-    # 1.3): if the operator is pointing EZ-Kea at a different config file, we
-    # must NOT also write whatever's currently loaded into memory (from the
-    # OLD path) over the top of the NEW path. Just switch the pointer, and
-    # require the target to either not exist yet (first-time setup) or
-    # already contain parseable Kea JSON. ─────────────────────────────────
+    # ── Config-file repoint is a distinct action, not a save: if the operator
+    # is pointing EZ-KEA at a different config file, we must NOT also write
+    # whatever's currently loaded into memory (from the OLD path) over the top
+    # of the NEW path. Just switch the pointer, and require the target to either
+    # not exist yet (first-time setup) or already contain parseable Kea JSON.
     candidate_config_file = request.form.get(names["config_file_field"], "").strip() or current_config_file
     if candidate_config_file != current_config_file:
         resolved_target = os.path.abspath(candidate_config_file)
@@ -801,7 +799,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
             existing_opts.append({"name": name, "data": data})
     dhcp["option-data"] = existing_opts
 
-    # Runtime EZ-Kea settings (Kea command paths, file paths) — persisted to
+    # Runtime EZ-KEA settings (Kea command paths, file paths) — persisted to
     # ez-kea-settings.json. Start from the full merged settings so this
     # version's save never clobbers the other version's persisted fields.
     new_settings = dict(load_settings(current_app.config["SETTINGS_FILE"]))
@@ -838,8 +836,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
     # truth for the running daemon. Use the in-container path when one is
     # configured (Docker deployments) since that's the namespace Kea itself
     # actually reads/writes in — writing the host path verbatim there would
-    # silently kill Kea's own logging the moment it's applied (see
-    # AUDIT_FINDINGS.md 2.3).
+    # silently kill Kea's own logging the moment it's applied.
     log_file_path = new_settings[f"{prefix}_log_file_in_container"] or new_settings[f"{prefix}_log_file"]
 
     if _dir_exists(log_file_path):

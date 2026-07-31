@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """
-keage/core/discovery.py
+ez_kea/core/discovery.py
 
 Handles auto-discovery of live ISC-Kea processes and configurations.
-Allows EZ-Kea to be purely plug-and-play by sniffing /proc to see if Kea
+Allows EZ-KEA to be purely plug-and-play by sniffing /proc to see if Kea
 is already running, and what config files it was started with.
 """
 import os

@@ -4,7 +4,7 @@
 """
 ez_kea/mailer.py
 
-Minimal, dependency-free SMTP mailer for EZ-Kea. Settings are stored as
+Minimal, dependency-free SMTP mailer for EZ-KEA. Settings are stored as
 key/value rows in the existing SystemSetting table (same table/pattern
 license.py uses for license_key) -- no new table needed.
 
@@ -95,7 +95,7 @@ def _smtp_connect(settings: dict):
 
 def send_password_reset_email(user, reset_url: str, settings: dict) -> tuple[bool, str]:
     """Email a self-service password-reset link. Not gated behind is_licensed()
-    -- nothing in EZ-Kea is (see license.py) -- and account recovery is the
+    -- nothing in EZ-KEA is (see license.py) -- and account recovery is the
     last thing that should be: a locked-out admin on an unlicensed install
     would otherwise have no way back in at all.
     """
@@ -104,7 +104,7 @@ def send_password_reset_email(user, reset_url: str, settings: dict) -> tuple[boo
         return False, "SMTP is not configured in Settings."
 
     smtp_from = settings.get("smtp_from", "").strip() or settings.get("smtp_username", "").strip()
-    company = settings.get("company_name", "EZ-Kea")
+    company = settings.get("company_name", "EZ-KEA")
 
     subject = f"[{company}] Password Reset Request"
     body_html = f"""

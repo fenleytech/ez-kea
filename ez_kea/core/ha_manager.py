@@ -9,11 +9,11 @@ Dhcp4/Dhcp6 config's hooks-libraries[] list. HA lets two (or three) Kea
 servers share lease state over HTTP and fail over automatically -- see the
 Kea ARM's "High Availability" chapter. The hook's own config lives entirely
 inside the DHCP daemon's config file (no separate daemon to manage), which
-is exactly the kind of thing EZ-Kea already edits directly.
+is exactly the kind of thing EZ-KEA already edits directly.
 
 Note this only manages the hook's parameters block. It does NOT configure
 the Kea Control Agent that peers actually talk to over HTTP -- that's a
-separate daemon/config file outside EZ-Kea's current scope. The peer "url"
+separate daemon/config file outside EZ-KEA's current scope. The peer "url"
 fields entered here must match wherever each peer's own Control Agent is
 listening.
 """

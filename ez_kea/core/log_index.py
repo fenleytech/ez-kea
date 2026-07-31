@@ -366,7 +366,7 @@ def rotated_siblings(path: str) -> List[str]:
     Covers both logrotate conventions — numeric (`.log.1`, `.log.2.gz`) and
     dated (`.log-20260729.gz`). Confined to the same directory as the live log,
     which has already passed `validate_log_file_path`, so this never widens
-    what EZ-Kea will read.
+    what EZ-KEA will read.
     """
     candidates = set(glob.glob(path + ".*")) | set(glob.glob(path + "-*"))
     candidates.discard(path)

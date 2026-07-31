@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Log Search - EZ-Kea{% endblock %}
+{% block title %}Log Search - EZ-KEA{% endblock %}
 
 {% macro filter_qs(page=None) -%}
 q={{ search_query | urlencode }}&range={{ selected_range | urlencode }}&start={{ start_text | urlencode }}&end={{ end_text | urlencode }}&severity={{ severity | urlencode }}&version={{ version | urlencode }}{% if page %}&page={{ page }}{% endif %}

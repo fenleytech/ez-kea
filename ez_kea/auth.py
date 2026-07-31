@@ -77,7 +77,7 @@ def _validate_username(username, exclude_uid=None):
 
 
 def _qr_uri(secret, username):
-    uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name="EZ-Kea")
+    uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name="EZ-KEA")
     img = qrcode.make(uri)
     buf = io.BytesIO()
     img.save(buf, format="PNG")

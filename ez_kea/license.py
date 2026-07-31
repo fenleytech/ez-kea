@@ -4,9 +4,9 @@
 """
 ez_kea/license.py
 
-RSA-signed license validation for EZ-Kea.
+RSA-signed license validation for EZ-KEA.
 
-EZ-Kea is licensed under PolyForm Noncommercial 1.0.0: free for personal,
+EZ-KEA is licensed under PolyForm Noncommercial 1.0.0: free for personal,
 hobby, and other noncommercial use, with commercial use requiring a paid
 license. That boundary is a *license term*, not something this module tries to
 enforce in code — see the note below.
@@ -26,7 +26,7 @@ DHCP configuration. Compliance for commercial use rests on the license terms.
 License key format: EZK1.<base64url-payload>.<base64url-signature>
 
 The payload is a JSON blob signed with a 2048-bit RSA private key held by
-the vendor. The public key embedded here is EZ-Kea specific — it was
+the vendor. The public key embedded here is EZ-KEA specific — it was
 generated fresh for this project and is not shared with any other product.
 """
 import base64
@@ -37,7 +37,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
 
-# ── EZ-Kea RSA-2048 public key ──────────────────────────────────────────────
+# ── EZ-KEA RSA-2048 public key ──────────────────────────────────────────────
 # Generated exclusively for this project.  The matching private key is kept
 # offline by the vendor and is NEVER distributed with the application.
 _PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
@@ -166,7 +166,7 @@ def license_status(active_lease_count: int = 0) -> dict:
     if active_lease_count > NAG_LEASE_THRESHOLD:
         banner = (
             f"This installation is serving {active_lease_count} active leases. "
-            "EZ-Kea is free for noncommercial use; commercial use requires a "
+            "EZ-KEA is free for noncommercial use; commercial use requires a "
             "license."
         )
 

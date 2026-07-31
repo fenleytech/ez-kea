@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}High Availability - EZ-Kea{% endblock %}
+{% block title %}High Availability - EZ-KEA{% endblock %}
 
 {% macro peer_row(peer) %}
 <tr class="ha-peer-row">
@@ -125,7 +125,7 @@
           <i data-lucide="plus"></i> Add Peer
         </button>
         <p style="color:var(--text-secondary);font-size:.8rem;margin-top:.75rem;">
-          Each peer's URL points at that server's Kea Control Agent (not managed by EZ-Kea) --
+          Each peer's URL points at that server's Kea Control Agent (not managed by EZ-KEA) --
           the HA hook uses it to exchange lease updates and heartbeats with its partner(s).
         </p>
       </div>
@@ -163,7 +163,7 @@
   <i data-lucide="info" style="width:16px;height:16px;vertical-align:middle;"></i>
   Configures Kea's built-in <code>libdhcp_ha.so</code> hook, which lets two (or three) Kea servers
   share lease state and fail over automatically. Each peer also needs its own Kea Control Agent
-  running and reachable at the URL entered below -- that daemon isn't managed by EZ-Kea.
+  running and reachable at the URL entered below -- that daemon isn't managed by EZ-KEA.
 </div>
 
 {{ ha_card("DHCPv4 High Availability", "network", "Dhcp4", ha4, ha4_library, "main.ha.save_ha_config", "main.ha.api_ha_status", "ha4") }}

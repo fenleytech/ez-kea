@@ -6,9 +6,6 @@ ez_kea/core/security.py
 
 Server-side guardrails that stop user-controlled configuration values from
 being used to gain arbitrary code execution or arbitrary file read/write.
-
-See AUDIT_FINDINGS.md section 1 (items 1.1, 1.2) for the vulnerabilities this
-module closes.
 """
 import os
 import shlex
@@ -17,7 +14,7 @@ from typing import List, Optional
 
 from .config_manager import extract_log_file_from_config
 
-# The only binaries EZ-Kea is ever allowed to exec(), by basename. Anything
+# The only binaries EZ-KEA is ever allowed to exec(), by basename. Anything
 # else — however it's spelled — is rejected outright. `docker` is included
 # only to support the documented `docker exec <container> kea-dhcp4|kea-dhcp6|keactrl`
 # testbed pattern; its arguments are further constrained below.
@@ -26,11 +23,11 @@ ALLOWED_DOCKER_TARGETS = {"kea-dhcp4", "kea-dhcp6", "keactrl"}
 
 
 class InvalidKeaCommandError(ValueError):
-    """Raised when a configured Kea command fails validation (see 1.1)."""
+    """Raised when a configured Kea command fails validation."""
 
 
 class InvalidLogPathError(ValueError):
-    """Raised when a configured log file path fails validation (see 1.2)."""
+    """Raised when a configured log file path fails validation."""
 
 
 def validate_kea_command(cmd_string: str, context: str = "command") -> List[str]:
@@ -38,10 +35,7 @@ def validate_kea_command(cmd_string: str, context: str = "command") -> List[str]
     Validate that `cmd_string`, once shell-split, resolves to a known-good,
     executable Kea-related binary, and return the parsed argv list.
 
-    This is the fix for AUDIT_FINDINGS.md 1.1: `kea_dhcp4_cmd`/`kea_ctrl_cmd`
-    used to be free text fed straight into shlex.split() + subprocess.run(),
-    letting an attacker choose argv[0] (and therefore what actually runs).
-    Now the resolved basename must be one of kea-dhcp4/keactrl/docker, and the
+    The resolved basename must be one of kea-dhcp4/keactrl/docker, and the
     resolved file must actually exist and be executable. The documented
     `docker exec kea-testbed-kea-1 kea-dhcp4` pattern is explicitly supported.
 
@@ -95,8 +89,7 @@ def validate_log_file_path(
 ) -> str:
     """
     Validate a candidate `dhcp_log_file` override submitted through Global
-    Settings. Fix for AUDIT_FINDINGS.md 1.2 (arbitrary file read via
-    `dhcp_log_file` + `/logs`).
+    Settings.
 
     A candidate is accepted if either:
       * it resolves to exactly the path the Kea config file itself already

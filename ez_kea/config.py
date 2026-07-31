@@ -59,10 +59,10 @@ class Config:
     # --- Docker-deployment settings -----------------------------------------
     # When KEA_DHCP4_CMD/KEA_CTRL_CMD exec into a container (e.g.
     # "docker exec <container> kea-dhcp4"), DHCP_CONFIG_FILE/DHCP_LOG_FILE
-    # above are HOST paths that EZ-Kea itself reads/writes — they are not
+    # above are HOST paths that EZ-KEA itself reads/writes — they are not
     # necessarily valid inside the container's own filesystem namespace (the
     # volume mount may expose the same file at a different in-container
-    # path). These two settings let a Docker deployment tell EZ-Kea what path
+    # path). These two settings let a Docker deployment tell EZ-KEA what path
     # to pass to `-t` / write into Kea's own logger config instead. Left
     # blank (the default), both fall back to the host path above, which is
     # exactly correct for bare-metal/non-Docker deployments — so existing

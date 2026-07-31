@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}EZ-Kea{% endblock %}</title>
+    <title>{% block title %}EZ-KEA{% endblock %}</title>
 
-    <!-- Favicon / touch icons, downscaled from the EZ-Kea badge mark
+    <!-- Favicon / touch icons, downscaled from the EZ-KEA badge mark
          (static/images/ez-kea-logo.png). Same source and same sizes as
          ezkea.com/img/, so site and app render an identical mark. -->
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icons/favicon.ico') }}">
@@ -29,7 +29,7 @@
     <nav class="navbar">
         <div class="navbar-container">
             <a href="{{ url_for('main.system.index') }}" class="navbar-brand" style="display:flex;align-items:center;gap:1rem;">
-                <span><img src="{{ url_for('static', filename='icons/icon-64.png') }}" alt="" width="26" height="26" style="vertical-align:middle;border-radius:6px;"> EZ-Kea</span>
+                <span><img src="{{ url_for('static', filename='icons/icon-64.png') }}" alt="" width="26" height="26" style="vertical-align:middle;border-radius:6px;"> EZ-KEA</span>
                 {% if ez_kea_mode == 'LIVE' %}
                 <span style="font-size:0.75rem;padding:0.2rem 0.6rem;border-radius:1rem;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);font-weight:600;display:flex;align-items:center;gap:0.25rem;">
                     <div style="width:6px;height:6px;border-radius:50%;background:#10b981;box-shadow:0 0 4px #10b981;"></div> LIVE MODE
@@ -88,7 +88,7 @@
         {% endwith %}
 
         {# Licensing reminder for larger (probably commercial) installs.
-           Informational only — nothing in EZ-Kea is gated on licensing. #}
+           Informational only — nothing in EZ-KEA is gated on licensing. #}
         {% if license_state and license_state.banner %}
         <div class="alert alert-info" style="display:flex;align-items:center;gap:0.75rem;">
           <i data-lucide="info" style="width:18px;height:18px;flex-shrink:0;"></i>

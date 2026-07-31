@@ -12,7 +12,7 @@
 {% set save_endpoint = 'main.system.save_global_settings_version' if v6 else 'main.system.save_global_settings' %}
 {% set save_endpoint_kwargs = {'version': '6'} if v6 else {} %}
 
-{% block title %}Global {{ 'DHCPv6' if v6 else 'DHCPv4' }} Settings - EZ-Kea{% endblock %}
+{% block title %}Global {{ 'DHCPv6' if v6 else 'DHCPv4' }} Settings - EZ-KEA{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -185,11 +185,11 @@
   </div>
 </div>
 
-<!-- ── EZ-Kea Application Settings ─────────────────────────────────────────── -->
+<!-- ── EZ-KEA Application Settings ─────────────────────────────────────────── -->
 <div class="card" style="margin-top:1.5rem;">
   <div class="card-header" style="justify-content: space-between;">
     <div>
-      <h2><i data-lucide="wrench"></i> EZ-Kea Application Settings</h2>
+      <h2><i data-lucide="wrench"></i> EZ-KEA Application Settings</h2>
       <span style="font-size:.8rem;color:var(--text-secondary);">Persisted to <code>ez-kea-settings.json</code>.</span>
     </div>
     {% if not v6 %}

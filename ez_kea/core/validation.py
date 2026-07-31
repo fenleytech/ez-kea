@@ -44,7 +44,7 @@ def validate_option_data(value: str) -> bool:
     characters or angle brackets. This is DHCP option data serialized into a
     config file real DHCP clients parse, not free-form HTML — control chars
     can break the Kea config/log format and angle brackets have no legitimate
-    use here (see AUDIT_FINDINGS.md 1.9).
+    use here.
     """
     if not isinstance(value, str) or not value:
         return False
@@ -178,7 +178,7 @@ def get_active_leases(leases_file: str) -> List[Dict[str, Any]]:
                         "mac_address": row.get("hwaddr"),
                         # Hostnames here come straight from whatever the DHCP client
                         # sent in its hostname option — sanitize the same way a
-                        # human-typed hostname is sanitized (see AUDIT_FINDINGS.md 1.10).
+                        # human-typed hostname is sanitized.
                         "hostname": sanitize_hostname(row.get("hostname") or ""),
                         "expire": expiration_time
                     })

@@ -13,7 +13,7 @@ csrf = CSRFProtect()
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
-login_manager.login_message = "Please log in to access EZ-Kea."
+login_manager.login_message = "Please log in to access EZ-KEA."
 login_manager.login_message_category = "error"
 
 
@@ -33,7 +33,7 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
     if config_overrides:
         app.config.update(config_overrides)
 
-    # AUDIT_FINDINGS.md 1.6 — loud warning when SECRET_KEY is still default.
+    # Warning when SECRET_KEY is still set to the default value.
     if app.config.get("SECRET_KEY") == "dev":
         warning = (
             "SECURITY WARNING: SECRET_KEY is set to the insecure default 'dev'. "
@@ -59,7 +59,7 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
     # Auto-discover Kea environment
     from .core.discovery import discover_environment, discover_environment6
     env_info = discover_environment(app.config)
-    app.config["EZ-Kea_MODE"] = env_info["mode"]
+    app.config["EZ-KEA_MODE"] = env_info["mode"]
     if "dhcp_config_file" in env_info:
         app.config["DHCP_CONFIG_FILE"] = env_info["dhcp_config_file"]
         app.config["KEA_DHCP4_CMD"]    = env_info["kea_dhcp4_cmd"]
@@ -73,7 +73,7 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
             app.config["DHCP_LOG_FILE"]    = "/var/log/kea/kea-dhcp4.log"
 
     env6_info = discover_environment6(app.config)
-    app.config["EZ-Kea6_MODE"] = env6_info["mode"]
+    app.config["EZ-KEA6_MODE"] = env6_info["mode"]
     if "dhcp6_config_file" in env6_info:
         app.config["DHCP6_CONFIG_FILE"] = env6_info["dhcp6_config_file"]
         app.config["KEA_DHCP6_CMD"]     = env6_info["kea_dhcp6_cmd"]
@@ -140,7 +140,7 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
             # shown, so an unreadable leases file just means "no banner".
             active = 0
         return dict(
-            ez_kea_mode=app.config.get("EZ-Kea_MODE", "LIVE"),
+            ez_kea_mode=app.config.get("EZ-KEA_MODE", "LIVE"),
             license_state=license_status(active),
             # Only truthy on the public demo (see Config.PUBLIC_DEMO), where
             # the login page pre-fills these. Absent everywhere else, so no

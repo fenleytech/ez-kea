@@ -149,10 +149,9 @@ def save_json(data: Dict[str, Any], file_path: str) -> None:
 # fcntl.flock() (used inside load_json/save_json above) only guards the
 # individual read or write syscall — it does nothing to stop two concurrent
 # requests from both loading the same config, mutating their own in-memory
-# copies, and then racing to save, silently discarding one of them (see
-# AUDIT_FINDINGS.md 1.8). Waitress's default worker model is threaded, so a
-# plain threading.Lock per resolved file path is enough to serialize the
-# entire cycle within this process.
+# copies, and then racing to save, silently discarding one of them.
+# Waitress's default worker model is threaded, so a plain threading.Lock
+# per resolved file path is enough to serialize the entire cycle within this process.
 
 _file_locks: Dict[str, threading.Lock] = {}
 _file_locks_guard = threading.Lock()
@@ -258,9 +257,8 @@ def _config_identity(config_file: str) -> str:
 
     Encoded into backup filenames so that restore can tell backups of *this*
     config_file apart from backups of some other config_file that happens to
-    share the same basename in the same backup_dir (see AUDIT_FINDINGS.md 1.7
-    — `dhcp_config_file` is fully operator/attacker-settable, so basename
-    alone is not a safe way to scope a restore).
+    share the same basename in the same backup_dir (`dhcp_config_file` is
+    operator-settable, so basename alone is not a safe way to scope a restore).
     """
     return hashlib.sha256(os.path.realpath(config_file).encode()).hexdigest()[:16]
 
