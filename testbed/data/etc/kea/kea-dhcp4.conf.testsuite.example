@@ -1,0 +1,106 @@
+{
+  "Dhcp4": {
+    "interfaces-config": {
+      "interfaces": [
+        "eth0",
+        "eth1",
+        "eth2"
+      ]
+    },
+    "control-sockets": [
+      {
+        "socket-type": "unix",
+        "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock"
+      }
+    ],
+    "lease-database": {
+      "type": "memfile",
+      "lfc-interval": 3600,
+      "name": "/var/lib/kea/kea-leases4.csv"
+    },
+    "host-reservation-identifiers": [
+      "hw-address"
+    ],
+    "valid-lifetime": 4000,
+    "option-data": [
+      {
+        "name": "domain-name-servers",
+        "data": "8.8.8.8, 1.1.1.1"
+      },
+      {
+        "name": "ntp-servers",
+        "data": "162.159.200.1"
+      }
+    ],
+    "subnet4": [],
+    "shared-networks": [
+      {
+        "name": "vlan10-net",
+        "subnet4": [
+          {
+            "id": 1,
+            "subnet": "172.30.110.0/24",
+            "option-data": [
+              {
+                "name": "routers",
+                "data": "172.30.110.1"
+              }
+            ],
+            "reservations": [
+              {
+                "hostname": "reserved-client",
+                "hw-address": "de:ad:be:ef:00:01",
+                "ip-address": "172.30.110.50"
+              }
+            ],
+            "pools": [
+              {
+                "pool": "172.30.110.100 - 172.30.110.101"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "vlan20-net",
+        "subnet4": [
+          {
+            "id": 2,
+            "subnet": "172.30.120.0/24",
+            "option-data": [
+              {
+                "name": "routers",
+                "data": "172.30.120.1"
+              },
+              {
+                "name": "vendor-encapsulated-options",
+                "data": "0116687474703a2f2f6163732e6578616d706c652e636f6d",
+                "csv-format": false
+              }
+            ],
+            "pools": [
+              {
+                "pool": "172.30.120.100 - 172.30.120.200"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "loggers": [
+      {
+        "name": "kea-dhcp4",
+        "severity": "INFO",
+        "debuglevel": 0,
+        "output_options": [
+          {
+            "output": "/var/log/kea/kea-dhcp4.log",
+            "maxver": 8,
+            "maxsize": 204800,
+            "flush": true
+          }
+        ]
+      }
+    ]
+  }
+}

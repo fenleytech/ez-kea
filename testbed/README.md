@@ -112,6 +112,31 @@ DHCP_LOG_FILE_IN_CONTAINER=/var/log/kea/kea-dhcp4.log
 DHCP_LOG_FILE=./testbed/data/var/log/kea/kea-dhcp4.log
 ```
 
+## Running the test suite
+
+`test_suite.sh` exercises eight DHCP behaviours (pool leases on two VLANs, MAC
+reservation, pool exhaustion, unknown subnet, renewal, option delivery,
+release) against whichever target is up. It needs a config with those things
+actually configured — the bare `kea-dhcp4.conf.example` has no subnets, so
+every lease test would fail against it.
+
+`kea-dhcp4.conf.testsuite.example` is that config, in 3.x syntax:
+
+```bash
+cp data/etc/kea/kea-dhcp4.conf.testsuite.example data/etc/kea/kea-dhcp4.conf
+KEA_DOCKERFILE=Dockerfile.kea-3.2 docker compose up -d --build
+bash test_suite.sh
+```
+
+Last verified: **10 passed, 0 failed** on Kea 3.2.0, and the same on 2.0.2 —
+for the 2.x target, change `control-sockets` back to a singular
+`control-socket` object and point the logger at `/var/log/kea-dhcp4.log`, since
+2.0.2 predates both.
+
+The suite itself is version-agnostic: it resolves the Kea log path at runtime
+(the two targets put it in different places) and reads the config on the host
+rather than through `docker exec python3`, which ISC's 3.x images do not have.
+
 ## Integration with local EZ-KEA
 
 To have your local instance of EZ-KEA interact with this dockerized Kea server instead of a bare-metal local installation, point it at these files (see `.env.testbed` at the repo root, or set the equivalent env vars / Global Settings fields yourself):

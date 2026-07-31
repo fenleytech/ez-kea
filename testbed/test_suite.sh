@@ -55,9 +55,50 @@ lease_ip_for_mac() {
         | grep -v TIMED_OUT || true
 }
 
+# Kea 2.x logs to /var/log/kea-dhcp4.log, but Kea 3.x refuses any logger output
+# path outside /var/log/kea/ — resolve whichever this target actually uses.
+KEA_LOG_PATH=""
+resolve_kea_log_path() {
+    local candidate
+    for candidate in /var/log/kea/kea-dhcp4.log /var/log/kea-dhcp4.log; do
+        if [[ "$(dexec 5 kea-testbed-kea-1 "test -f $candidate && echo found")" == "found" ]]; then
+            KEA_LOG_PATH="$candidate"
+            return
+        fi
+    done
+    KEA_LOG_PATH="/var/log/kea-dhcp4.log"
+}
+
 # Read Kea log from inside the container
 kea_log() {
-    dexec 5 kea-testbed-kea-1 "cat /var/log/kea-dhcp4.log 2>/dev/null" | grep -v TIMED_OUT || true
+    [[ -n "$KEA_LOG_PATH" ]] || resolve_kea_log_path
+    dexec 5 kea-testbed-kea-1 "cat $KEA_LOG_PATH 2>/dev/null" | grep -v TIMED_OUT || true
+}
+
+# Read an option out of the Kea config. Done on the HOST, against the same file
+# the container bind-mounts: ISC's Kea 3.x images carry no python3, so the old
+# `docker exec ... python3` form silently returned nothing there.
+CONFIG_FILE="$(dirname "$0")/data/etc/kea/kea-dhcp4.conf"
+config_option() {
+    # $1 = option name, $2 = "global" or "subnet"
+    python3 - "$CONFIG_FILE" "$1" "$2" 2>/dev/null <<'PY' || true
+import json, sys
+path, name, scope = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    dhcp4 = json.load(open(path)).get("Dhcp4", {})
+except Exception:
+    print(""); raise SystemExit
+if scope == "global":
+    pool = dhcp4.get("option-data", [])
+else:
+    # Walk standalone subnets AND shared-network subnets — EZ-KEA writes both,
+    # and only checking the standalone list misses most real configs.
+    subnets = list(dhcp4.get("subnet4", []))
+    for net in dhcp4.get("shared-networks", []):
+        subnets.extend(net.get("subnet4", []))
+    pool = [o for s in subnets for o in s.get("option-data", [])]
+print({o.get("name"): o.get("data") for o in pool}.get(name, "") or "")
+PY
 }
 
 # ── Pre-flight ─────────────────────────────────────────────────────────────────
@@ -164,13 +205,8 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 header "TEST 7 — DHCP Option Delivery (DNS + NTP + ACS URL)"
 # ══════════════════════════════════════════════════════════════════════════════
-cfg_dns=$(dexec 5 kea-testbed-kea-1 \
-    "python3 -c \"import json; c=json.load(open('/etc/kea/kea-dhcp4.conf')); opts={o['name']:o['data'] for o in c.get('Dhcp4',{}).get('option-data',[])}; print(opts.get('domain-name-servers',''))\"" \
-    2>/dev/null | grep -v TIMED_OUT || true)
-
-cfg_acs=$(dexec 5 kea-testbed-kea-1 \
-    "python3 -c \"import json; c=json.load(open('/etc/kea/kea-dhcp4.conf')); opts={o['name']:o['data'] for s in c.get('Dhcp4',{}).get('subnet4',[]) for o in s.get('option-data',[])}; print(opts.get('vendor-encapsulated-options',''))\"" \
-    2>/dev/null | grep -v TIMED_OUT || true)
+cfg_dns=$(config_option domain-name-servers global)
+cfg_acs=$(config_option vendor-encapsulated-options subnet)
 
 if [[ -n "$cfg_dns" ]] || [[ -n "$cfg_acs" ]]; then
     log "  Custom Options configured (DNS: ${cfg_dns:-none}, ACS: ${cfg_acs:-none}) — verifying delivery..."
@@ -191,10 +227,13 @@ if [[ -n "$cfg_dns" ]] || [[ -n "$cfg_acs" ]]; then
         # udhcpc stores option 43 (vendor-encapsulated-options) differently depending on script, 
         # often missing or raw hex. We check if udhcpc received ANY option 43 in standard output.
         # But a more direct way: we grep the dhcp options dump for standard vendor options
+        # Read the captured VALUE, not the label: a bare `grep -i vendor` also
+        # matches the line "Vendor    : NONE", which reported a delivery that
+        # had demonstrably not happened.
         received_acs=$(dexec 5 kea-testbed-client-vlan20-1 \
-            "grep -i 'vendor' /tmp/dhcp_options.txt 2>/dev/null || grep -i 'opt43' /tmp/dhcp_options.txt 2>/dev/null || true" \
+            "grep -i '^Vendor' /tmp/dhcp_options.txt 2>/dev/null | cut -d: -f2- | tr -d ' '" \
             | grep -v TIMED_OUT || true)
-        if [[ -n "$received_acs" ]]; then
+        if [[ -n "$received_acs" ]] && [[ "$received_acs" != "NONE" ]]; then
             pass "ACS URL / Vendor option delivered: $(echo $received_acs | head -c 50)..."
         else
             # Some udhcpc scripts don't export option 43 explicitly unless requested via -O 43.
