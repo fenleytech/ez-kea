@@ -27,6 +27,21 @@ class Config:
     PUBLIC_DEMO_USERNAME = os.getenv("PUBLIC_DEMO_USERNAME", "demo")
     PUBLIC_DEMO_PASSWORD = os.getenv("PUBLIC_DEMO_PASSWORD", "demo")
 
+    # --- Log search index ---------------------------------------------------
+    # Backing store for the searchable log history (see core/log_index.py).
+    # Deliberately a separate file from ez-kea.db: the index is disposable and
+    # can grow large, and neither of those should ever be true of the database
+    # holding user accounts. Deleting it is safe — it rebuilds from the logs.
+    LOG_INDEX_DB      = os.getenv("LOG_INDEX_DB", "./data/ez-kea-logindex.db")
+    LOG_INDEX_ENABLED = os.getenv("LOG_INDEX_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+    # Seconds between background ingest passes. Ingest is incremental, so this
+    # is the worst-case staleness of the Logs page, not a batch window.
+    LOG_INDEX_INTERVAL = int(os.getenv("LOG_INDEX_INTERVAL", "60"))
+    # How far back searchable history is kept. Generous by default because the
+    # point of the index is answering questions about months ago; set to 0 to
+    # keep everything and manage disk yourself.
+    LOG_INDEX_RETENTION_DAYS = int(os.getenv("LOG_INDEX_RETENTION_DAYS", "365"))
+
     BACKUP_DIR       = os.getenv("BACKUP_DIR",       "./data/backups/")
     SETTINGS_FILE    = os.getenv("SETTINGS_FILE",    "./data/ez-kea-settings.json")
     SECRET_KEY       = os.getenv("SECRET_KEY",       "dev")

@@ -26,6 +26,8 @@ Usage:
 """
 import argparse
 import csv
+import glob
+import gzip
 import json
 import os
 import random
@@ -42,6 +44,15 @@ RNG = random.Random(20260729)
 
 DEFAULT_DEMO_USERNAME = "demo"
 DEFAULT_DEMO_PASSWORD = "demo"
+
+# Days of log history the demo ships with, written out as a live log plus
+# rotated siblings the way logrotate would leave them. A 45-minute tail was
+# enough to show the Logs page had colour coding; it is nowhere near enough to
+# show what the log search is for, which is answering "who held this address
+# three weeks ago" — so the demo carries a month, including gzipped archives,
+# to exercise the index's rotation handling too.
+LOG_HISTORY_DAYS = 30
+LOG_LINES_PER_HISTORY_DAY = 140
 
 # Above 100 active leases EZ-Kea shows a licensing reminder banner (see
 # ez_kea/license.py NAG_LEASE_THRESHOLD). Nothing is blocked, but the demo
@@ -491,6 +502,100 @@ def build_log6(leases: list, now: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+def build_log4_history_day(leases: list, day_start: datetime, count: int) -> str:
+    """One day of plausible DHCPv4 traffic drawn from the demo's own devices.
+
+    Reusing the same lease population as the live log is what makes the demo's
+    log search worth trying: a MAC or IP copied off the Leases page has a month
+    of history behind it rather than a single line.
+    """
+    lines = []
+    for _ in range(count):
+        lease = RNG.choice(leases)
+        stamp = day_start + timedelta(seconds=RNG.randint(0, 86399))
+        tid = RNG.randint(0x10000000, 0xFFFFFFFF)
+        roll = RNG.random()
+        if roll < 0.45:
+            lines.append(_log_line(
+                stamp, "INFO", "kea-dhcp4.leases",
+                f"DHCP4_LEASE_ALLOC [hwtype=1 {lease['hwaddr']}], cid=[{lease['client_id']}], "
+                f"tid=0x{tid:x}: lease {lease['address']} has been allocated for "
+                f"{lease['valid_lifetime']} seconds"
+            ))
+        elif roll < 0.85:
+            lines.append(_log_line(
+                stamp, "INFO", "kea-dhcp4.leases",
+                f"DHCP4_LEASE_RENEW [hwtype=1 {lease['hwaddr']}], cid=[{lease['client_id']}], "
+                f"tid=0x{tid:x}: lease {lease['address']} has been renewed for "
+                f"{lease['valid_lifetime']} seconds"
+            ))
+        elif roll < 0.95:
+            lines.append(_log_line(
+                stamp, "INFO", "kea-dhcp4.leases",
+                f"DHCP4_RELEASE [hwtype=1 {lease['hwaddr']}], cid=[{lease['client_id']}], "
+                f"tid=0x{tid:x}: address {lease['address']} has been released"
+            ))
+        else:
+            lines.append(_log_line(
+                stamp, "WARN", "kea-dhcp4.dhcp4",
+                f"DHCP4_PACKET_NAK_0001 [hwtype=1 {lease['hwaddr']}], cid=[no info], "
+                f"tid=0x{tid:x}: failed to select a subnet for incoming packet, src "
+                f"{lease['address']}, type DHCPREQUEST"
+            ))
+
+    # The timestamp prefix is fixed-width, so a plain sort puts the day in
+    # chronological order.
+    lines.sort()
+    return "\n".join(lines) + "\n"
+
+
+def build_log6_history_day(leases: list, day_start: datetime, count: int) -> str:
+    """One day of plausible DHCPv6 traffic, mirroring build_log4_history_day."""
+    lines = []
+    for _ in range(count):
+        lease = RNG.choice(leases)
+        stamp = day_start + timedelta(seconds=RNG.randint(0, 86399))
+        tid = RNG.randint(0x100000, 0xFFFFFF)
+        verb = "DHCP6_PD_LEASE_ALLOC" if lease["lease_type"] == 2 else "DHCP6_LEASE_ALLOC"
+        suffix = f"/{lease['prefix_len']}" if lease["lease_type"] == 2 else ""
+        lines.append(_log_line(
+            stamp, "INFO", "kea-dhcp6.leases",
+            f"{verb} duid=[{lease['duid']}], tid=0x{tid:x}, iaid={lease['iaid']}: "
+            f"lease {lease['address']}{suffix} has been allocated for "
+            f"{lease['valid_lifetime']} seconds"
+        ))
+    lines.sort()
+    return "\n".join(lines) + "\n"
+
+
+def write_log_history(target: str, filename: str, day_texts: list) -> None:
+    """Write the live log plus rotated siblings, the way logrotate leaves them.
+
+    `day_texts[0]` is today's live file; index 1 becomes `.1` uncompressed and
+    everything older becomes `.N.gz`, which is the standard `delaycompress`
+    layout and gives the log index's archive backfill something real to chew on.
+    """
+    # Clear siblings from an earlier seed first, or shortening the history
+    # would leave orphaned archives behind to be indexed forever.
+    for stale in glob.glob(os.path.join(target, filename + ".*")):
+        os.remove(stale)
+
+    for age, text in enumerate(day_texts):
+        if age == 0:
+            path = os.path.join(target, filename)
+        elif age == 1:
+            path = os.path.join(target, f"{filename}.1")
+        else:
+            path = os.path.join(target, f"{filename}.{age}.gz")
+
+        if path.endswith(".gz"):
+            with gzip.open(path, "wt") as handle:
+                handle.write(text)
+        else:
+            with open(path, "w") as handle:
+                handle.write(text)
+
+
 def _log_line(stamp: datetime, severity: str, logger: str, message: str) -> str:
     """Format a single Kea-style log line."""
     ms = RNG.randint(0, 999)
@@ -586,10 +691,18 @@ def main() -> int:
     write_csv(os.path.join(target, "kea-leases4.csv"), LEASE4_COLUMNS, leases4)
     write_csv(os.path.join(target, "kea-leases6.csv"), LEASE6_COLUMNS, leases6)
 
-    with open(os.path.join(target, "kea-dhcp4.log"), "w") as handle:
-        handle.write(build_log4(leases4, now))
-    with open(os.path.join(target, "kea-dhcp6.log"), "w") as handle:
-        handle.write(build_log6(leases6, now))
+    # Today's live log, then one file per older day. build_log4/6 still render
+    # the recent tail the Logs page opens on; the older days exist so the log
+    # search has a month of history to actually search.
+    midnight = datetime.fromtimestamp(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    write_log_history(target, "kea-dhcp4.log", [build_log4(leases4, now)] + [
+        build_log4_history_day(leases4, midnight - timedelta(days=day), LOG_LINES_PER_HISTORY_DAY)
+        for day in range(1, LOG_HISTORY_DAYS)
+    ])
+    write_log_history(target, "kea-dhcp6.log", [build_log6(leases6, now)] + [
+        build_log6_history_day(leases6, midnight - timedelta(days=day), LOG_LINES_PER_HISTORY_DAY // 4)
+        for day in range(1, LOG_HISTORY_DAYS)
+    ])
 
     # Pin EZ-Kea to this sandbox so the demo can never be re-pointed at a real
     # /etc/kea config by the auto-discovery pass on the next restart.

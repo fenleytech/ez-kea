@@ -38,6 +38,13 @@ if [[ -d "$DEMO_DATA/backups" ]]; then
     find "$DEMO_DATA/backups" -type f -delete
 fi
 
+# Drop the log search index. seed_demo.py rewrites the whole log history on
+# every reset, so a kept index would stack each reset's copy on top of the last
+# and the demo's "lines indexed" figure would climb forever. The background
+# indexer rebuilds it from the freshly seeded files within a minute of restart.
+rm -f "$DEMO_DATA"/ez-kea-logindex.db "$DEMO_DATA"/ez-kea-logindex.db-wal \
+      "$DEMO_DATA"/ez-kea-logindex.db-shm
+
 # Only restart if we're running under systemd with the unit installed; this
 # lets the script also be run by hand during setup.
 if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files "$DEMO_SERVICE" >/dev/null 2>&1; then

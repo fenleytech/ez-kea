@@ -41,6 +41,10 @@ coverage.xml
 # Databases
 *.sqlite3
 *.db
+# SQLite WAL sidecars — the log index runs in WAL mode, so these sit next to
+# the .db file and aren't caught by the pattern above.
+*.db-wal
+*.db-shm
 
 # OS / Editors
 .DS_Store

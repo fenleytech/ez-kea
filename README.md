@@ -44,8 +44,13 @@ like.
   load-balancing, passive-backup) and watch peer state live over the control socket.
 - **Safe edits** — back up, restore, syntax-check, and apply configuration from
   the UI, then reload the daemons with `keactrl` (or SIGHUP for Docker installs).
-- **Leases and logs** — active DHCPv4/DHCPv6 lease tables and a searchable
-  daemon log viewer.
+- **Leases** — active DHCPv4/DHCPv6 lease tables.
+- **Full-history log search** — search the complete Kea daemon log history by
+  MAC address, IP address, subnet, time range, and severity, not just the recent
+  tail. Rotated and gzipped archives are included, results export to CSV, and
+  every query is an indexed lookup rather than a scan, so searches stay fast as
+  the logs grow. Built for the audit and abuse-complaint requests that arrive
+  naming one address and one timestamp.
 - **Multi-user auth** — accounts with optional TOTP two-factor, recovery codes,
   and SMTP-backed password reset. Admin accounts additionally manage users,
   licensing, and email settings.
@@ -85,6 +90,29 @@ python3 app.py
 Running it as a systemd service, pointing it at a non-standard Kea layout, and
 Docker-based Kea deployments are all covered in the
 [Installation guide](https://github.com/fenleytech/ez-kea/wiki/Installation).
+
+## Log search
+
+The **Log Search** page searches an index of the Kea daemon logs rather than the
+files themselves, so a query for a MAC address, an IP, or a subnet within a time
+window returns in milliseconds regardless of how much history has accumulated.
+Rotated and gzipped archives are picked up automatically, and results export to
+CSV for attaching to a ticket.
+
+The index lives in its own SQLite file, is built and kept current by a
+background thread (never on a page load), and is disposable — deleting it just
+means it rebuilds from the logs. It needs no setup, but four environment
+variables tune it:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LOG_INDEX_DB` | `./data/ez-kea-logindex.db` | Where the index is stored |
+| `LOG_INDEX_ENABLED` | `1` | Set to `0` to turn log search off entirely |
+| `LOG_INDEX_INTERVAL` | `60` | Seconds between background ingest passes |
+| `LOG_INDEX_RETENTION_DAYS` | `365` | How far back searchable history is kept; `0` keeps everything |
+
+Budget roughly 1 KB of index per log line when sizing disk, and lower
+`LOG_INDEX_RETENTION_DAYS` on a busy server that logs at DEBUG.
 
 ## Licensing
 

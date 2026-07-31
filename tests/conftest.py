@@ -12,7 +12,17 @@ test client's session the same way flask_login's login_user() does,
 bypassing the password/2FA flow itself, which these route-level tests
 aren't concerned with.
 """
-from werkzeug.security import generate_password_hash
+import os
+
+# Keep create_app() from starting the log-index background thread during tests.
+# Config reads this at import time and several fixtures set TESTING only *after*
+# create_app() returns, too late for the guard inside start_background_indexer.
+# Left to its default, every app a test builds would spawn a thread writing to
+# the developer's real ./data directory on a timer. The index itself is tested
+# directly in test_log_index.py.
+os.environ.setdefault("LOG_INDEX_ENABLED", "0")
+
+from werkzeug.security import generate_password_hash  # noqa: E402
 
 TEST_PASSWORD_HASH = generate_password_hash("test-password-not-used-1234567")
 

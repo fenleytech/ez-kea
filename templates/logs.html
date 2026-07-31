@@ -1,23 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Logs - EZ-Kea{% endblock %}
+{% block title %}Log Search - EZ-Kea{% endblock %}
+
+{% macro filter_qs(page=None) -%}
+q={{ search_query | urlencode }}&range={{ selected_range | urlencode }}&start={{ start_text | urlencode }}&end={{ end_text | urlencode }}&severity={{ severity | urlencode }}&version={{ version | urlencode }}{% if page %}&page={{ page }}{% endif %}
+{%- endmacro %}
 
 {% block content %}
 <div class="page-header">
-    <h1><i data-lucide="terminal"></i> Kea-DHCP Daemon Logs</h1>
+    <h1><i data-lucide="search"></i> Log Search</h1>
 </div>
 
 <div class="card">
     <div class="card-header">
-        <h2><i data-lucide="search"></i> Search Logs</h2>
+        <h2><i data-lucide="filter"></i> Search Kea DHCP History</h2>
     </div>
     <div class="card-body">
-        <form action="{{ url_for('main.system.logs') }}" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <label for="search_query" class="form-label" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">Search logs</label>
-            <div style="display: flex; gap: 1rem;">
-                <input type="text" class="form-control" id="search_query" name="search_query"
-                    placeholder="Enter keyword to search... (e.g. ERROR, DHCP4_LEASE_ALLOC)" value="{{ search_query }}">
+        <form action="{{ url_for('main.system.logs') }}" method="GET" id="log-search-form">
+            <label for="q" class="form-label">Search by MAC, IP address, subnet, or text</label>
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <input type="text" class="form-control" id="q" name="q" style="flex: 1 1 22rem;"
+                    placeholder="aa:bb:cc:dd:ee:ff &nbsp;·&nbsp; 10.20.20.31 &nbsp;·&nbsp; 10.20.20.0/24 &nbsp;·&nbsp; 2001:db8::1 &nbsp;·&nbsp; DHCP4_LEASE_ALLOC"
+                    value="{{ search_query }}" autofocus>
                 <button type="submit" class="btn btn-primary" style="white-space: nowrap;">
                     <i data-lucide="search"></i> Search
                 </button>
@@ -25,33 +29,187 @@
                     <i data-lucide="rotate-ccw"></i> Reset
                 </a>
             </div>
+
+            {% if query_kind %}
+            <p style="margin: 0.6rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">
+                Interpreted as
+                <strong style="color: var(--accent);">
+                    {% if query_kind == 'mac' %}a MAC address
+                    {% elif query_kind == 'ip' %}an IP address
+                    {% elif query_kind == 'cidr' %}a subnet
+                    {% else %}free text{% endif %}
+                </strong>
+                — matched against every indexed log line, not just recent ones.
+            </p>
+            {% endif %}
+
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1.25rem; align-items: flex-end;">
+                <div class="form-group" style="margin: 0; flex: 0 0 12rem;">
+                    <label for="range" class="form-label">Time range</label>
+                    <select class="form-control" id="range" name="range">
+                        {% for value, label, _seconds in time_ranges %}
+                        <option value="{{ value }}" {% if selected_range == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                        <option value="custom" {% if selected_range == 'custom' %}selected{% endif %}>Custom range…</option>
+                    </select>
+                </div>
+
+                <div class="form-group log-custom-range" style="margin: 0; flex: 0 0 14rem;">
+                    <label for="start" class="form-label">From</label>
+                    <input type="datetime-local" step="1" class="form-control" id="start" name="start" value="{{ start_text }}">
+                </div>
+                <div class="form-group log-custom-range" style="margin: 0; flex: 0 0 14rem;">
+                    <label for="end" class="form-label">To</label>
+                    <input type="datetime-local" step="1" class="form-control" id="end" name="end" value="{{ end_text }}">
+                </div>
+
+                <div class="form-group" style="margin: 0; flex: 0 0 10rem;">
+                    <label for="severity" class="form-label">Severity</label>
+                    <select class="form-control" id="severity" name="severity">
+                        <option value="">Any</option>
+                        {% for level in severities %}
+                        <option value="{{ level }}" {% if severity == level %}selected{% endif %}>{{ level }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin: 0; flex: 0 0 10rem;">
+                    <label for="version" class="form-label">Protocol</label>
+                    <select class="form-control" id="version" name="version">
+                        <option value="">DHCPv4 &amp; v6</option>
+                        <option value="4" {% if version == '4' %}selected{% endif %}>DHCPv4 only</option>
+                        <option value="6" {% if version == '6' %}selected{% endif %}>DHCPv6 only</option>
+                    </select>
+                </div>
+            </div>
         </form>
     </div>
 </div>
 
-<div class="card" style="background: rgba(0, 0, 0, 0.8);">
-    <div class="card-header" style="border-bottom-color: rgba(255,255,255,0.05);">
-        <h2><i data-lucide="align-left"></i> Output</h2>
+<div class="card">
+    <div class="card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+        <h2 style="margin: 0;"><i data-lucide="align-left"></i> Results</h2>
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <span style="font-size: 0.85rem; color: var(--text-secondary);">
+                {% if total %}
+                    {{ '{:,}'.format((page - 1) * page_size + 1) }}–{{ '{:,}'.format((page - 1) * page_size + rows|length) }}
+                    of {{ '{:,}'.format(total) }}{% if capped %}+{% endif %} matching {{ 'line' if total == 1 else 'lines' }}
+                {% else %}
+                    No matching lines
+                {% endif %}
+            </span>
+            {% if total %}
+            <a href="{{ url_for('main.system.logs_export') }}?{{ filter_qs() }}" class="btn btn-outline btn-sm" style="white-space: nowrap;">
+                <i data-lucide="download"></i> Export CSV
+            </a>
+            {% endif %}
+        </div>
     </div>
     <div class="card-body" style="padding: 0;">
-        <div
-            style="background-color: #050505; border-radius: 0 0 12px 12px; padding: 1.5rem; height: 600px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; color: var(--text-primary); line-height: 1.6;">
-            {% if log_lines %}
-            {% for line in log_lines %}
-            <div
-                style="padding: 0.25rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); {{ 'color: #fca5a5;' if 'ERROR' in line else '' }} {{ 'color: #fdba74;' if 'WARN' in line else '' }}">
-                {{ line }}
-            </div>
+        <div style="background-color: #050505; padding: 1.5rem; min-height: 420px; max-height: 700px; overflow: auto; font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6;">
+            {% if rows %}
+            {% for row in rows %}
+            <div style="padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); white-space: pre-wrap; word-break: break-word;
+                        color: {% if row.severity in ('ERROR', 'FATAL') %}#fca5a5{% elif row.severity == 'WARN' %}#fdba74{% else %}var(--text-primary){% endif %};">{{ row.raw }}</div>
             {% endfor %}
             {% else %}
-            <div
-                style="display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;">
+            <div style="display: flex; min-height: 380px; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;">
                 <i data-lucide="file-search" style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
-                <h2 style="margin: 0 0 0.5rem 0; color: var(--text-primary);">No Log Entries Found</h2>
-                <p style="color: var(--text-secondary); margin: 0;">{% if search_query %}No lines matched "{{ search_query }}".{% else %}The configured log file has no entries yet.{% endif %}</p>
+                <h2 style="margin: 0 0 0.5rem 0; color: var(--text-primary);">No Matching Log Entries</h2>
+                <p style="color: var(--text-secondary); margin: 0; max-width: 34rem;">
+                    {% if search_query or severity or version or selected_range != 'all' %}
+                        Nothing in the indexed history matched these filters.
+                        {% if stats.entries == 0 %}The index is still empty — see coverage below.{% else %}Try widening the time range.{% endif %}
+                    {% elif stats.entries == 0 %}
+                        The log index is empty. It fills in automatically from the configured Kea log files within a minute of startup.
+                    {% else %}
+                        The configured log file has no entries yet.
+                    {% endif %}
+                </p>
             </div>
             {% endif %}
         </div>
     </div>
+    {% if total and (page > 1 or has_next) %}
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1.5rem; border-top: 1px solid var(--border);">
+        {% if page > 1 %}
+        <a href="{{ url_for('main.system.logs') }}?{{ filter_qs(page - 1) }}" class="btn btn-outline btn-sm">
+            <i data-lucide="chevron-left"></i> Newer
+        </a>
+        {% else %}<span></span>{% endif %}
+        <span style="font-size: 0.8rem; color: var(--text-secondary);">Page {{ '{:,}'.format(page) }}</span>
+        {% if has_next %}
+        <a href="{{ url_for('main.system.logs') }}?{{ filter_qs(page + 1) }}" class="btn btn-outline btn-sm">
+            Older <i data-lucide="chevron-right"></i>
+        </a>
+        {% else %}<span></span>{% endif %}
+    </div>
+    {% endif %}
 </div>
+
+<div class="card">
+    <div class="card-header">
+        <h2><i data-lucide="database"></i> Index Coverage</h2>
+    </div>
+    <div class="card-body">
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0;">
+            Searches run against an index of the Kea log files, including rotated and compressed
+            archives, so results cover the full retained history rather than the recent tail.
+            The index updates in the background and is never rebuilt on a page load.
+        </p>
+        <div style="display: flex; gap: 2.5rem; flex-wrap: wrap; margin: 1.25rem 0;">
+            <div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Lines indexed</div>
+                <div style="font-size: 1.35rem; font-weight: 600;">{{ '{:,}'.format(stats.entries) }}</div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">History begins</div>
+                <div style="font-size: 1.35rem; font-weight: 600;">
+                    {{ stats.oldest_text }}
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Most recent line</div>
+                <div style="font-size: 1.35rem; font-weight: 600;">
+                    {{ stats.newest_text }}
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Log files tracked</div>
+                <div style="font-size: 1.35rem; font-weight: 600;">{{ stats.sources }}</div>
+            </div>
+        </div>
+        <form action="{{ url_for('main.system.logs_reindex') }}" method="POST" style="margin: 0;"
+              onsubmit="return confirm('Clear the log index and rebuild it from the log files? Searches will return partial results until the rebuild finishes.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline btn-sm">
+                <i data-lucide="refresh-cw"></i> Rebuild index
+            </button>
+            <span style="margin-left: 0.75rem; font-size: 0.8rem; color: var(--text-secondary);">
+                Only needed after changing the configured log file path. Exports are capped at
+                {{ '{:,}'.format(export_max_rows) }} rows.
+            </span>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Custom From/To only apply when "Custom range…" is selected; hiding them
+    // otherwise keeps the preset and the explicit window from looking like two
+    // competing answers to the same question.
+    (function () {
+        var rangeSelect = document.getElementById('range');
+        var customFields = document.querySelectorAll('.log-custom-range');
+
+        function syncCustomFields() {
+            var custom = rangeSelect.value === 'custom';
+            customFields.forEach(function (field) {
+                field.style.display = custom ? '' : 'none';
+            });
+        }
+
+        rangeSelect.addEventListener('change', syncCustomFields);
+        syncCustomFields();
+    })();
+</script>
 {% endblock %}

@@ -1,13 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Kaleb Fenley
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
+import csv
+import io
 import shlex
 import subprocess
 import os
 import json
-from typing import Dict, Tuple, Union, Any
+import threading
+import time
+from datetime import datetime
+from typing import Any, Dict, Optional, Tuple, Union
 from flask_login import login_required
-from flask import Blueprint, render_template, request, redirect, url_for, jsonify, current_app, flash
+from flask import (
+    Blueprint, render_template, request, redirect, url_for, jsonify, current_app,
+    flash, stream_with_context,
+)
 from werkzeug.wrappers import Response
 from ..core.config_manager import (
     load_json, save_json, copy_file, extract_log_file_from_config,
@@ -307,29 +315,256 @@ def apply_config_version(version: str) -> Union[Response, Tuple[Response, int]]:
         return _invalid_version_response()
     return _apply_config_impl(version)
 
+# --- Log search --------------------------------------------------------------
+# Searches run against the SQLite index built by core/log_index.py, not against
+# the log files, so they cover the full retained history (including rotated and
+# gzipped archives) at index-seek speed rather than the last 1000 lines.
+
+# Relative windows offered in the UI, as (value, label, seconds).
+LOG_TIME_RANGES = (
+    ("1h",  "Last hour",    3600),
+    ("24h", "Last 24 hours", 86400),
+    ("7d",  "Last 7 days",   604800),
+    ("30d", "Last 30 days",  2592000),
+    ("90d", "Last 90 days",  7776000),
+    ("all", "All history",   None),
+)
+_RANGE_SECONDS = {value: seconds for value, _label, seconds in LOG_TIME_RANGES}
+
+# Hard ceiling on a single CSV export. An export is meant to be attached to a
+# ticket, and an unbounded one is a way to accidentally serve gigabytes; when
+# it bites, the file says so explicitly rather than quietly ending early.
+LOG_EXPORT_MAX_ROWS = 500_000
+
+
+def _parse_datetime_local(value: str) -> Optional[float]:
+    """Epoch seconds for an <input type=datetime-local> value, or None.
+
+    Interpreted as local time, matching how Kea writes its own timestamps and
+    therefore how the index stores them.
+    """
+    value = (value or "").strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+def _format_epoch(value: Optional[float]) -> str:
+    """Human-readable local time for an index timestamp, or an em dash."""
+    if not value:
+        return "—"
+    try:
+        return datetime.fromtimestamp(value).strftime("%Y-%m-%d %H:%M")
+    except (OverflowError, OSError, ValueError):
+        return "—"
+
+
+def _log_search_params() -> Dict[str, Any]:
+    """Read the Logs page's filters off the request.
+
+    Accepts GET and POST identically (via request.values) so a search is a
+    plain linkable URL — which is the point for compliance work: the query that
+    produced an export can be pasted into the ticket alongside it.
+    """
+    from ..core import log_index
+
+    values = request.values
+    # `search_query` is the field name the pre-index Logs form used; still
+    # honoured so old bookmarks and links keep working.
+    raw_query = (values.get("q") or values.get("search_query") or "").strip()
+    kind, term = log_index.classify_term(raw_query)
+
+    filters: Dict[str, Any] = {
+        "q": None, "mac": None, "ip": None, "cidr": None,
+        "severity": values.get("severity", "").strip().upper() or None,
+        "version": values.get("version", "").strip() or None,
+        "msg_id": values.get("msg_id", "").strip().upper() or None,
+    }
+    if raw_query:
+        if kind == "mac":
+            filters["mac"] = term
+        elif kind == "ip":
+            filters["ip"] = term
+        elif kind == "cidr":
+            filters["cidr"] = term
+        else:
+            filters["q"] = term
+
+    start = _parse_datetime_local(values.get("start", ""))
+    end = _parse_datetime_local(values.get("end", ""))
+    time_range = values.get("range", "").strip() or ("custom" if (start or end) else "all")
+    if time_range not in ("custom",) and time_range in _RANGE_SECONDS:
+        window = _RANGE_SECONDS[time_range]
+        start = (time.time() - window) if window else None
+        end = None
+    filters["start"] = start
+    filters["end"] = end
+
+    return {
+        "filters": filters,
+        "raw_query": raw_query,
+        "query_kind": kind if raw_query else None,
+        "range": time_range,
+        "start_text": values.get("start", "").strip(),
+        "end_text": values.get("end", "").strip(),
+    }
+
+
 @system_bp.route("/logs", methods=["GET", "POST"])
 @login_required
 def logs() -> str:
     """
-    Render Kea DHCP logs. Features a search query and limits extraction to the
-    last 1000 lines for memory safety, handling Unicode decoding gracefully.
-    """
-    from collections import deque
-    search_query = request.form.get("search_query", "")
-    log_lines = []
-    
-    log_file = _log_file_for_viewing()
-    
-    if os.path.exists(log_file):
-        with open(log_file, "r", encoding="utf-8", errors="replace") as file:
-            log_lines = list(deque(file, maxlen=1000))
-        log_lines.reverse()
-        
-    if search_query:
-        search_lower = search_query.lower()
-        log_lines = [line for line in log_lines if search_lower in line.lower()]
+    Render the Kea DHCP log search.
 
-    return render_template("logs.html", log_lines=log_lines, search_query=search_query)
+    Every filter resolves to an indexed lookup in the log index, so the page
+    costs the same whether the deployment has a thousand lines of history or a
+    hundred million. Nothing here builds or refreshes the index — that happens
+    on the background thread started in create_app() — so a first-run backfill
+    never shows up as a slow page load.
+    """
+    from ..core import log_index
+
+    parsed = _log_search_params()
+    filters = parsed["filters"]
+
+    try:
+        page = max(1, int(request.values.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page_size = log_index.DEFAULT_PAGE_SIZE
+
+    conn = log_index.connect(current_app.config["LOG_INDEX_DB"])
+    try:
+        result = log_index.search(
+            conn, limit=page_size, offset=(page - 1) * page_size, **filters
+        )
+        stats = log_index.index_stats(conn)
+    finally:
+        conn.close()
+
+    # Formatted here rather than via a Jinja filter — these are the only two
+    # timestamps the page renders outside the raw log text itself.
+    stats["oldest_text"] = _format_epoch(stats["oldest"])
+    stats["newest_text"] = _format_epoch(stats["newest"])
+
+    return render_template(
+        "logs.html",
+        rows=result["rows"],
+        total=result["total"],
+        capped=result["capped"],
+        page=page,
+        page_size=page_size,
+        has_next=(page * page_size) < result["total"] or result["capped"],
+        stats=stats,
+        search_query=parsed["raw_query"],
+        query_kind=parsed["query_kind"],
+        severity=filters["severity"] or "",
+        version=filters["version"] or "",
+        selected_range=parsed["range"],
+        start_text=parsed["start_text"],
+        end_text=parsed["end_text"],
+        time_ranges=LOG_TIME_RANGES,
+        severities=log_index.SEVERITIES,
+        export_max_rows=LOG_EXPORT_MAX_ROWS,
+    )
+
+
+@system_bp.route("/logs/export.csv", methods=["GET"])
+@login_required
+def logs_export() -> Response:
+    """
+    Stream the current log search as CSV — the deliverable for an audit or
+    abuse request.
+
+    Rows are fetched a page at a time and written straight to the response, so
+    a large export costs bounded memory instead of materialising every matching
+    line first.
+    """
+    from ..core import log_index
+
+    filters = _log_search_params()["filters"]
+    db_path = current_app.config["LOG_INDEX_DB"]
+
+    def generate():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+
+        def flush() -> str:
+            chunk = buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+            return chunk
+
+        writer.writerow([
+            "timestamp", "epoch", "dhcp_version", "severity",
+            "logger", "message_id", "message",
+        ])
+        yield flush()
+
+        conn = log_index.connect(db_path)
+        try:
+            written = 0
+            for row in log_index.iter_search(conn, **filters):
+                if written >= LOG_EXPORT_MAX_ROWS:
+                    # Never end an evidence file silently short.
+                    writer.writerow([
+                        f"# TRUNCATED at {LOG_EXPORT_MAX_ROWS} rows — narrow the "
+                        "time range or filters and export again"
+                    ])
+                    yield flush()
+                    break
+                ts = row["ts"]
+                writer.writerow([
+                    datetime.fromtimestamp(ts).isoformat(sep=" ", timespec="milliseconds") if ts else "",
+                    f"{ts:.3f}" if ts else "",
+                    row["version"], row["severity"] or "", row["logger"] or "",
+                    row["msg_id"] or "", row["raw"],
+                ])
+                written += 1
+                if written % 500 == 0:
+                    yield flush()
+            yield flush()
+        finally:
+            conn.close()
+
+    filename = f"ez-kea-log-search-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
+    return current_app.response_class(
+        stream_with_context(generate()),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@system_bp.route("/logs/reindex", methods=["POST"])
+@login_required
+def logs_reindex() -> Response:
+    """
+    Discard and rebuild the log index from the files on disk.
+
+    Wanted after the log path changes, or if the index is ever suspected of
+    having drifted. The rebuild itself runs on a worker thread — the operator
+    gets the page back immediately and watches the coverage figures refill.
+    """
+    from ..core import log_index
+
+    config = dict(current_app.config)
+    log_index.rebuild(config["LOG_INDEX_DB"])
+
+    def refill() -> None:
+        try:
+            log_index.run_once(config)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+    threading.Thread(target=refill, name="ez-kea-log-reindex", daemon=True).start()
+    flash("Log index cleared — rebuilding from the log files now.", "success")
+    return redirect(url_for("main.system.logs"))
 
 def _build_global_settings_context(version: str = "4") -> Dict[str, Any]:
     """Build the template context shared by the global-settings GET view and

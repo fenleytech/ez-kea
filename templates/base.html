@@ -51,7 +51,7 @@
                 <li><a href="{{ url_for('main.dhcp6.leases6') }}" class="nav-link"><i data-lucide="list"></i> IPv6 Leases</a></li>
                 <li><a href="{{ url_for('main.ha.high_availability') }}" class="nav-link"><i data-lucide="shield-check"></i> HA</a></li>
                 <li><a href="{{ url_for('main.system.global_settings') }}" class="nav-link"><i data-lucide="settings"></i> Settings</a></li>
-                <li><a href="{{ url_for('main.system.logs') }}" class="nav-link"><i data-lucide="terminal"></i> Logs</a></li>
+                <li><a href="{{ url_for('main.system.logs') }}" class="nav-link"><i data-lucide="terminal"></i> Log Search</a></li>
             </ul>
             {% if current_user.is_authenticated %}
             <div class="navbar-account" style="margin-left:auto;padding-left:1rem;border-left:1px solid rgba(255,255,255,0.1);">

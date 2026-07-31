@@ -89,6 +89,13 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
     bootstrap_config(app.config["DHCP_CONFIG_FILE"], app.config["BACKUP_DIR"])
     bootstrap_config6(app.config["DHCP6_CONFIG_FILE"], app.config["BACKUP_DIR"])
 
+    # Keep the searchable log history current. This runs on a background
+    # daemon thread and never on a request, so a first-run backfill of months
+    # of rotated logs doesn't hold up page loads — /logs just serves whatever
+    # is indexed so far while the rest fills in behind it.
+    from .core.log_index import start_background_indexer
+    start_background_indexer(app)
+
     # Register blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)
