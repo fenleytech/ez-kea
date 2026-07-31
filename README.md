@@ -71,7 +71,7 @@ EZ-KEA is different. It is for the admin who has a few Kea servers and is tired 
 - Edits the file Kea is actually running, with backup and syntax check
 - A simple interface you can hand to a junior admin or anyone who prefers not to live in a JSON file
 
-If that sounds like you, try EZ-KEA. It is completely free for noncommercial use, homelabs, and personal learning. Commercial use needs a license, but you can get a free 30 day eval to try it at work.
+If that sounds like you, try EZ-KEA. It is completely free for noncommercial use, homelabs, and personal learning. Commercial use is $500 a year per deployment, and you can get a free 30 day eval to try it at work first.
 
 ## Features
 
@@ -97,7 +97,8 @@ EZ-KEA is source-available under [PolyForm Noncommercial 1.0.0](https://polyform
 In short:
 
 - **Free for noncommercial use.** Everything included, no limits. That covers homelabs, personal use, learning, charities, schools, and government use.
-- **Commercial use needs a license.** If it manages DHCP for a business or you get paid to run it for someone else, email **<sales@ezkea.com>**.
+- **Commercial use needs a license.** If it manages DHCP for a business or you get paid to run it for someone else, that is **$500 a year for a single deployment** — one production install, in one environment, run by one organization. Email **<sales@ezkea.com>**.
+- **More than one deployment?** ISPs, MSPs, enterprises, and multi-site operators get volume licensing, priced on how many you run rather than off a list price. Email **<sales@ezkea.com>** with the number and I will quote it.
 - **Want to try it at work first?** Free 30 day commercial eval, no questions asked. Email **<sales@ezkea.com>** and I will send you a trial key.
 
 Unlicensed installs show a small note in the footer. It never blocks, degrades, or expires. It will not lock you out of your own config, licensed or not.

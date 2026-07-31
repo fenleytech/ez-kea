@@ -10,6 +10,17 @@ reads and always backs it up first.
 
 ## [Unreleased]
 
+### Changed
+
+- **Commercial licensing now states a price.** $500 a year for a single
+  deployment — one production install, in one environment, run by one
+  organization — with volume licensing quoted for anyone running more than
+  one. The README, the in-app Licensing page, and the unlicensed footer note
+  and banner all said "commercial use requires a license" without naming a
+  number, so the only way to learn the price was to send an email. No licensing
+  behaviour changed: nothing is gated, blocked, or expired, and the free
+  noncommercial terms are exactly as they were.
+
 ## [0.9.0] — 2026-07-31
 
 First tagged release. EZ-KEA has been public since 2026-07-29; this puts a

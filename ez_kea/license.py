@@ -62,7 +62,8 @@ NAG_LEASE_THRESHOLD = 100
 
 _UNLICENSED_NOTICE = (
     "Unlicensed — free for personal and other noncommercial use. "
-    "Commercial use requires a license."
+    "Commercial use requires a license: $500/year per deployment, "
+    "sales@ezkea.com."
 )
 
 
@@ -167,7 +168,7 @@ def license_status(active_lease_count: int = 0) -> dict:
         banner = (
             f"This installation is serving {active_lease_count} active leases. "
             "EZ-KEA is free for noncommercial use; commercial use requires a "
-            "license."
+            "license — $500 per year for a single deployment."
         )
 
     return {"licensed": False, "notice": _UNLICENSED_NOTICE, "banner": banner}
