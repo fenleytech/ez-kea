@@ -8,6 +8,7 @@ from flask_wtf import CSRFProtect
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from .config import Config
+from .__about__ import __version__
 
 csrf = CSRFProtect()
 db = SQLAlchemy()
@@ -157,6 +158,7 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
             active = 0
         return dict(
             ez_kea_mode=app.config.get("EZ-KEA_MODE", "LIVE"),
+            ez_kea_version=__version__,
             license_state=license_status(active),
             # Only truthy on the public demo (see Config.PUBLIC_DEMO), where
             # the login page pre-fills these. Absent everywhere else, so no

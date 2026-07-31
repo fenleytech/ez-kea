@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/fenleytech/ez-kea/releases"><img src="https://img.shields.io/github/v/release/fenleytech/ez-kea?label=version&color=blue" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
@@ -26,7 +27,7 @@ It is a shared sandbox with fake data and it resets every 30 minutes, so break w
 
 ## Quick start
 
-Requires **Python 3.10+**. Kea is optional. Without it, EZ-KEA starts in demo mode.
+Requires **Python 3.10+**. Kea is optional — without it, EZ-KEA starts in demo mode. Kea **2.x and 3.x** are both supported, including 3.2, which dropped the Control Agent and ships no `keactrl`.
 
 ```bash
 git clone https://github.com/fenleytech/ez-kea.git
@@ -78,7 +79,8 @@ If that sounds like you, try EZ-KEA. It is completely free for noncommercial use
 - **IPv4 and IPv6** for shared networks, standalone subnets, pools, prefix delegation, and per-subnet options.
 - **Reservations** MAC based for v4, DUID based for v6 with address and or prefix.
 - **High availability** to set up Kea's `libdhcp_ha.so` hook with hot-standby, load-balancing, passive-backup and watch peer status live from the control socket.
-- **Safe edits** that backup, restore, syntax check, and apply from the UI, then reload with `keactrl` or SIGHUP for Docker setups.
+- **Safe edits** that backup, restore, syntax check, and apply from the UI, then reload however your install expects — `keactrl`, the daemon's own control socket, or a SIGHUP for Docker setups.
+- **Kea 2.x and 3.x** both work. EZ-KEA checks the version of the daemon it found and writes the matching control-socket syntax, so a config it generates is accepted by either.
 - **Leases and logs** with active v4 and v6 lease tables and a searchable log viewer.
 - **Multi-user auth** where admin accounts can manage users, licensing, and email settings.
 
@@ -117,6 +119,10 @@ The [wiki](https://github.com/fenleytech/ez-kea/wiki) has the rest:
 | [High availability](https://github.com/fenleytech/ez-kea/wiki/High-Availability) | Setting up the HA hook |
 | [Testbed](https://github.com/fenleytech/ez-kea/wiki/Testbed) | Containerized Kea for end-to-end testing |
 | [Licensing](https://github.com/fenleytech/ez-kea/wiki/Licensing) | What is free, when you need to pay |
+
+## Releases
+
+Tagged releases are on the [Releases page](https://github.com/fenleytech/ez-kea/releases), and what changed in each is in [CHANGELOG.md](CHANGELOG.md). The running version is shown in the app footer, so you can tell what an install is on without checking out the repo.
 
 ## Support
 
