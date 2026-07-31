@@ -15,13 +15,17 @@ Usage:
   python license_gen.py --licensee "Acme Corp" --email admin@acme.com \
       --expires 2026-12-31
 """
-import argparse, base64, json
+import argparse, base64, json, os
 from datetime import date
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 LICENSE_PREFIX = "EZK1."
-PRIVATE_KEY_PATH = "keys/private.pem"
+
+# Relative by default, so running this from the repo root keeps working. The
+# override exists because generate() is also imported by the vendor-side
+# issuance tooling, which runs from its own directory and cannot rely on cwd.
+PRIVATE_KEY_PATH = os.environ.get("EZKEA_PRIVATE_KEY", "keys/private.pem")
 
 
 def generate(licensee: str, email: str, expires: str, features: list) -> str:
