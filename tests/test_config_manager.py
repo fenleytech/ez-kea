@@ -7,7 +7,8 @@ import pytest
 from unittest.mock import patch, mock_open
 from ez_kea.core.config_manager import (
     load_json, save_json, extract_log_file_from_config, extract_log_file_from_config6,
-    bootstrap_config, bootstrap_config6, copy_file, _DEFAULT_KEA_CONFIG, _DEFAULT_KEA6_CONFIG
+    bootstrap_config, bootstrap_config6, copy_file, to_legacy_control_socket,
+    _DEFAULT_KEA_CONFIG, _DEFAULT_KEA6_CONFIG
 )
 
 @pytest.fixture
@@ -135,6 +136,72 @@ def test_bootstrap_config_still_writes_v4_skeleton(temp_config_file, temp_backup
     the v4 skeleton, so the existing startup call site is unaffected."""
     bootstrap_config(temp_config_file, temp_backup_dir)
     assert load_json(temp_config_file) == _DEFAULT_KEA_CONFIG
+
+
+# ── control-socket syntax: Kea 3.0+ by default, pre-3.0 on request ──────────
+
+@pytest.mark.parametrize("dhcp_key,skeleton", [
+    ("Dhcp4", _DEFAULT_KEA_CONFIG),
+    ("Dhcp6", _DEFAULT_KEA6_CONFIG),
+])
+def test_default_skeletons_use_the_kea3_socket_list(dhcp_key, skeleton):
+    """Kea 2.6 is EOL, so a freshly generated config targets 3.0+ syntax."""
+    assert "control-socket" not in skeleton[dhcp_key]
+    sockets = skeleton[dhcp_key]["control-sockets"]
+    assert isinstance(sockets, list)
+    assert sockets[0]["socket-type"] == "unix"
+
+
+def test_bootstrap_writes_kea3_socket_list_by_default(temp_config_file, temp_backup_dir):
+    bootstrap_config(temp_config_file, temp_backup_dir)
+    written = load_json(temp_config_file)
+    assert "control-sockets" in written["Dhcp4"]
+    assert "control-socket" not in written["Dhcp4"]
+
+
+def test_bootstrap_downgrades_socket_syntax_for_pre_3_0_kea(temp_config_file, temp_backup_dir):
+    """A Kea older than 3.0 doesn't understand `control-sockets`, so the
+    skeleton we hand it must use the singular object instead."""
+    bootstrap_config(temp_config_file, temp_backup_dir, legacy_control_socket=True)
+    written = load_json(temp_config_file)
+    assert "control-sockets" not in written["Dhcp4"]
+    assert written["Dhcp4"]["control-socket"] == {
+        "socket-type": "unix",
+        "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock",
+    }
+
+
+def test_bootstrap6_downgrades_socket_syntax_for_pre_3_0_kea(temp_config6_file, temp_backup_dir):
+    bootstrap_config6(temp_config6_file, temp_backup_dir, legacy_control_socket=True)
+    written = load_json(temp_config6_file, default=_DEFAULT_KEA6_CONFIG)
+    assert "control-sockets" not in written["Dhcp6"]
+    assert written["Dhcp6"]["control-socket"]["socket-name"] == "/var/run/kea/kea-dhcp6-ctrl.sock"
+
+
+def test_downgrade_does_not_mutate_the_shared_skeleton(temp_config_file, temp_backup_dir):
+    """_DEFAULT_KEA_CONFIG is a module-level singleton — a legacy bootstrap
+    must not leave it rewritten for every later caller in the process."""
+    bootstrap_config(temp_config_file, temp_backup_dir, legacy_control_socket=True)
+    assert "control-sockets" in _DEFAULT_KEA_CONFIG["Dhcp4"]
+    assert "control-socket" not in _DEFAULT_KEA_CONFIG["Dhcp4"]
+
+
+def test_downgrade_preserves_key_order_and_other_sections():
+    config = to_legacy_control_socket(_DEFAULT_KEA_CONFIG)
+    keys = list(config["Dhcp4"].keys())
+    original = list(_DEFAULT_KEA_CONFIG["Dhcp4"].keys())
+    assert keys == ["control-socket" if k == "control-sockets" else k for k in original]
+    assert config["Dhcp4"]["lease-database"] == _DEFAULT_KEA_CONFIG["Dhcp4"]["lease-database"]
+
+
+@pytest.mark.parametrize("config", [
+    {"Dhcp4": {"control-sockets": []}},
+    {"Dhcp4": {"control-sockets": "not-a-list"}},
+    {"Dhcp4": {"control-socket": {"socket-type": "unix"}}},  # already legacy
+    {"Dhcp4": {}},
+])
+def test_downgrade_leaves_configs_it_cannot_convert_alone(config):
+    assert to_legacy_control_socket(config) == config
 
 def test_extract_log_file_from_config6(temp_config6_file):
     custom_config = dict(_DEFAULT_KEA6_CONFIG)

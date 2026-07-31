@@ -211,10 +211,12 @@ def build_config4(target: str) -> dict:
     return {
         "Dhcp4": {
             "interfaces-config": {"interfaces": []},
-            "control-socket": {
-                "socket-type": "unix",
-                "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock",
-            },
+            "control-sockets": [
+                {
+                    "socket-type": "unix",
+                    "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock",
+                }
+            ],
             "lease-database": {
                 "type": "memfile",
                 "lfc-interval": 3600,
@@ -277,10 +279,12 @@ def build_config6(target: str) -> dict:
     return {
         "Dhcp6": {
             "interfaces-config": {"interfaces": []},
-            "control-socket": {
-                "socket-type": "unix",
-                "socket-name": "/var/run/kea/kea-dhcp6-ctrl.sock",
-            },
+            "control-sockets": [
+                {
+                    "socket-type": "unix",
+                    "socket-name": "/var/run/kea/kea-dhcp6-ctrl.sock",
+                }
+            ],
             "lease-database": {
                 "type": "memfile",
                 "lfc-interval": 3600,

@@ -700,11 +700,22 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
         current_app.config["DHCP6_LEASES_FILE" if version == "6" else "DHCP_LEASES_FILE"] = new_settings[f"{prefix}_leases_file"]
         current_app.config["DHCP6_LOG_FILE" if version == "6" else "DHCP_LOG_FILE"] = new_settings[f"{prefix}_log_file"]
 
-        # First-time setup: create a minimal valid skeleton if nothing exists yet.
+        # First-time setup: create a minimal valid skeleton if nothing exists yet,
+        # in whichever control-socket syntax this Kea understands.
+        legacy_socket = False
+        if not os.path.exists(resolved_target):
+            from ..core.kea_version import uses_legacy_control_socket
+            legacy_socket = uses_legacy_control_socket(current_app.config["KEA_DHCP4_CMD"])
         if version == "6":
-            bootstrap_config6(resolved_target, current_app.config["BACKUP_DIR"])
+            bootstrap_config6(
+                resolved_target, current_app.config["BACKUP_DIR"],
+                legacy_control_socket=legacy_socket,
+            )
         else:
-            bootstrap_config(resolved_target, current_app.config["BACKUP_DIR"])
+            bootstrap_config(
+                resolved_target, current_app.config["BACKUP_DIR"],
+                legacy_control_socket=legacy_socket,
+            )
 
         flash(
             f"Kea config file repointed to '{resolved_target}'. Other settings on this page "

@@ -86,8 +86,24 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
             app.config["DHCP6_LOG_FILE"]    = "/var/log/kea/kea-dhcp6.log"
 
     from .core.config_manager import bootstrap_config, bootstrap_config6
-    bootstrap_config(app.config["DHCP_CONFIG_FILE"], app.config["BACKUP_DIR"])
-    bootstrap_config6(app.config["DHCP6_CONFIG_FILE"], app.config["BACKUP_DIR"])
+    # Only probe the Kea version when a skeleton is actually about to be
+    # written -- the probe execs kea-dhcp4, and paying that on every startup to
+    # answer a question about a file that already exists would be wasteful.
+    # One probe covers both daemons: v4 and v6 ship from the same Kea install.
+    legacy_socket = False
+    if not (os.path.exists(app.config["DHCP_CONFIG_FILE"])
+            and os.path.exists(app.config["DHCP6_CONFIG_FILE"])):
+        from .core.kea_version import uses_legacy_control_socket
+        legacy_socket = uses_legacy_control_socket(app.config["KEA_DHCP4_CMD"])
+
+    bootstrap_config(
+        app.config["DHCP_CONFIG_FILE"], app.config["BACKUP_DIR"],
+        legacy_control_socket=legacy_socket,
+    )
+    bootstrap_config6(
+        app.config["DHCP6_CONFIG_FILE"], app.config["BACKUP_DIR"],
+        legacy_control_socket=legacy_socket,
+    )
 
     # Keep the searchable log history current. This runs on a background
     # daemon thread and never on a request, so a first-run backfill of months

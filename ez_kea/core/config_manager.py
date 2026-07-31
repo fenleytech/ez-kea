@@ -11,16 +11,23 @@ import threading
 from contextlib import contextmanager
 from functools import wraps
 
-# Minimal valid Kea DHCPv4 skeleton written on first run
+# Minimal valid Kea DHCPv4 skeleton written on first run.
+#
+# `control-sockets` (list) is the Kea 3.0+ spelling of what used to be a single
+# `control-socket` object. It is the default here because Kea 2.6 is EOL; for a
+# daemon we positively identify as pre-3.0, bootstrap_config() downgrades this
+# via to_legacy_control_socket().
 _DEFAULT_KEA_CONFIG = {
     "Dhcp4": {
         "interfaces-config": {
             "interfaces": []
         },
-        "control-socket": {
-            "socket-type": "unix",
-            "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock"
-        },
+        "control-sockets": [
+            {
+                "socket-type": "unix",
+                "socket-name": "/var/run/kea/kea-dhcp4-ctrl.sock"
+            }
+        ],
         "lease-database": {
             "type": "memfile",
             "lfc-interval": 3600,
@@ -58,10 +65,12 @@ _DEFAULT_KEA6_CONFIG = {
         "interfaces-config": {
             "interfaces": []
         },
-        "control-socket": {
-            "socket-type": "unix",
-            "socket-name": "/var/run/kea/kea-dhcp6-ctrl.sock"
-        },
+        "control-sockets": [
+            {
+                "socket-type": "unix",
+                "socket-name": "/var/run/kea/kea-dhcp6-ctrl.sock"
+            }
+        ],
         "lease-database": {
             "type": "memfile",
             "lfc-interval": 3600,
@@ -223,11 +232,44 @@ def extract_log_file_from_config6(config_file: str, default_fallback: str) -> st
     return extract_log_file_from_config(config_file, default_fallback, dhcp_key="Dhcp6", logger_name="kea-dhcp6")
 
 
-def bootstrap_config(config_file: str, backup_dir: str, default_config: Optional[Dict[str, Any]] = None) -> None:
+def to_legacy_control_socket(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rewrite a skeleton's Kea 3.0+ `control-sockets` list back to the pre-3.0
+    singular `control-socket` object, for a daemon old enough to require it.
+
+    Only the first entry survives, which is lossless for our own skeletons
+    (they define exactly one UNIX socket) and is the only thing a pre-3.0 Kea
+    could have expressed anyway. Returns a new dict; the input is untouched.
+    """
+    rewritten: Dict[str, Any] = {}
+    for dhcp_key, daemon in config.items():
+        sockets = daemon.get("control-sockets") if isinstance(daemon, dict) else None
+        if not isinstance(sockets, list) or not sockets:
+            rewritten[dhcp_key] = daemon
+            continue
+        # Rebuild key-by-key so the socket stays where it was in the file
+        # rather than being popped to the end.
+        rewritten[dhcp_key] = {
+            ("control-socket" if key == "control-sockets" else key):
+                (sockets[0] if key == "control-sockets" else value)
+            for key, value in daemon.items()
+        }
+    return rewritten
+
+
+def bootstrap_config(
+    config_file: str,
+    backup_dir: str,
+    default_config: Optional[Dict[str, Any]] = None,
+    legacy_control_socket: bool = False,
+) -> None:
     """
     Called at app startup. Creates the data directory and writes a minimal
     valid Kea config skeleton (the v4 skeleton unless `default_config` is
     given, e.g. the v6 skeleton) if the config file does not already exist.
+
+    Set `legacy_control_socket` when the target daemon is older than Kea 3.0,
+    so the skeleton uses the singular `control-socket` object it understands.
     """
     try:
         os.makedirs(os.path.dirname(os.path.abspath(config_file)), exist_ok=True)
@@ -240,15 +282,22 @@ def bootstrap_config(config_file: str, backup_dir: str, default_config: Optional
         pass
 
     if not os.path.exists(config_file):
+        skeleton = dict(default_config if default_config is not None else _DEFAULT_KEA_CONFIG)
+        if legacy_control_socket:
+            skeleton = to_legacy_control_socket(skeleton)
         try:
-            save_json(dict(default_config if default_config is not None else _DEFAULT_KEA_CONFIG), config_file)
+            save_json(skeleton, config_file)
         except PermissionError:
             pass # We can't write the default config, so we'll run read-only and fail on save
 
 
-def bootstrap_config6(config_file: str, backup_dir: str) -> None:
+def bootstrap_config6(config_file: str, backup_dir: str, legacy_control_socket: bool = False) -> None:
     """bootstrap_config(), scoped to the DHCPv6 default skeleton."""
-    bootstrap_config(config_file, backup_dir, default_config=_DEFAULT_KEA6_CONFIG)
+    bootstrap_config(
+        config_file, backup_dir,
+        default_config=_DEFAULT_KEA6_CONFIG,
+        legacy_control_socket=legacy_control_socket,
+    )
 
 
 def _config_identity(config_file: str) -> str:
