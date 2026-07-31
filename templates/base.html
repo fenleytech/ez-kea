@@ -40,21 +40,13 @@
                 </span>
                 {% endif %}
             </a>
-            
-            <ul class="navbar-nav">
-                <li><a href="{{ url_for('main.system.index') }}" class="nav-link"><i data-lucide="home"></i> Home</a></li>
-                <li><a href="{{ url_for('main.dhcp4.pools') }}" class="nav-link"><i data-lucide="network"></i> DHCPv4</a></li>
-                <li><a href="{{ url_for('main.dhcp6.pools6') }}" class="nav-link"><i data-lucide="globe"></i> DHCPv6</a></li>
-                <li><a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv4 Reservations</a></li>
-                <li><a href="{{ url_for('main.dhcp6.reservations6') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv6 Reservations</a></li>
-                <li><a href="{{ url_for('main.dhcp4.leases') }}" class="nav-link"><i data-lucide="list"></i> IPv4 Leases</a></li>
-                <li><a href="{{ url_for('main.dhcp6.leases6') }}" class="nav-link"><i data-lucide="list"></i> IPv6 Leases</a></li>
-                <li><a href="{{ url_for('main.ha.high_availability') }}" class="nav-link"><i data-lucide="shield-check"></i> HA</a></li>
-                <li><a href="{{ url_for('main.system.global_settings') }}" class="nav-link"><i data-lucide="settings"></i> Settings</a></li>
-                <li><a href="{{ url_for('main.system.logs') }}" class="nav-link"><i data-lucide="terminal"></i> Log Search</a></li>
-            </ul>
+
+            {# Account control sits on the brand row, before the nav list, so
+               that DOM order matches the rendered two-row layout (brand +
+               account on top, nav links full-width beneath). Keeping it after
+               the nav made it wrap onto a third row of its own. #}
             {% if current_user.is_authenticated %}
-            <div class="navbar-account" style="margin-left:auto;padding-left:1rem;border-left:1px solid rgba(255,255,255,0.1);">
+            <div class="navbar-account">
                 <button type="button" class="navbar-account-btn" id="navAccountBtn" onclick="toggleAccountMenu(event)">
                     <i data-lucide="user-circle"></i> {{ current_user.username }}
                     <i data-lucide="chevron-down" class="chevron"></i>
@@ -72,6 +64,19 @@
                 </div>
             </div>
             {% endif %}
+
+            <ul class="navbar-nav">
+                <li><a href="{{ url_for('main.system.index') }}" class="nav-link"><i data-lucide="home"></i> Home</a></li>
+                <li><a href="{{ url_for('main.dhcp4.pools') }}" class="nav-link"><i data-lucide="network"></i> DHCPv4</a></li>
+                <li><a href="{{ url_for('main.dhcp6.pools6') }}" class="nav-link"><i data-lucide="globe"></i> DHCPv6</a></li>
+                <li><a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv4 Reservations</a></li>
+                <li><a href="{{ url_for('main.dhcp6.reservations6') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv6 Reservations</a></li>
+                <li><a href="{{ url_for('main.dhcp4.leases') }}" class="nav-link"><i data-lucide="list"></i> IPv4 Leases</a></li>
+                <li><a href="{{ url_for('main.dhcp6.leases6') }}" class="nav-link"><i data-lucide="list"></i> IPv6 Leases</a></li>
+                <li><a href="{{ url_for('main.ha.high_availability') }}" class="nav-link"><i data-lucide="shield-check"></i> HA</a></li>
+                <li><a href="{{ url_for('main.system.global_settings') }}" class="nav-link"><i data-lucide="settings"></i> Settings</a></li>
+                <li><a href="{{ url_for('main.system.logs') }}" class="nav-link"><i data-lucide="terminal"></i> Log Search</a></li>
+            </ul>
         </div>
     </nav>
 

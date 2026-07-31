@@ -361,18 +361,28 @@ tbody tr:hover {
   z-index: 50;
 }
 
-/* Wraps at every width rather than only on small screens. There are ten
-   top-level nav items and the IPv4/IPv6 labels are long, so a fixed-height
-   single row silently clipped the last items (Settings, Logs) on common
-   laptop widths — making them unreachable rather than merely cramped. */
+/* Deliberately two rows at every width, never one: brand and account share the
+   top row (brand left, account hard right), and .navbar-nav takes a full-width
+   row of its own beneath. There are ten top-level nav items and the IPv4/IPv6
+   labels are long, so a fixed-height single row silently clipped the last
+   items (Settings, Log Search) on common laptop widths — making them
+   unreachable rather than merely cramped. The nav row itself still wraps onto
+   as many lines as it needs at narrow widths; that is intended.
+
+   Grid rather than a wrapping flexbox, because flexbox wraps an item to the
+   next line in preference to shrinking one, so with three wrapping children
+   the account control ended up alone on a third, nearly empty row. The
+   explicit two-column track makes the top row structural instead of a
+   side effect of how much happens to fit. The 1fr brand column is
+   minmax(0, 1fr) so a cramped brand can never push the bar wider than the
+   viewport (the brand wraps internally instead — see .navbar-brand). */
 .navbar-container {
   max-width: 1600px;
   margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 64px;
+  padding: 0.5rem 0;
   row-gap: 0.5rem;
 }
 
@@ -386,7 +396,11 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-shrink: 0;
+  /* Shrinkable (down to its own min-content, so nothing is ever clipped) and
+     internally wrappable, so at phone widths the mode badge drops under the
+     wordmark instead of shoving the account control onto a row of its own. */
+  flex-shrink: 1;
+  flex-wrap: wrap;
   white-space: nowrap;
 }
 
@@ -410,9 +424,12 @@ tbody tr:hover {
   }
 }
 
+/* Spans both grid columns, i.e. its own full-width row under the
+   brand/account row, and wraps freely within that row. */
 .navbar-nav {
   display: flex;
   flex-wrap: wrap;
+  grid-column: 1 / -1;
   gap: 1rem;
   list-style: none;
   margin: 0;
@@ -438,10 +455,15 @@ tbody tr:hover {
    Settings, Logout) behind a single trigger so the navbar doesn't grow a
    new top-level item every time an admin-only page is added. Same
    click-to-toggle / click-outside-to-close interaction as auto-topology's
-   #account-menu, restyled to match this app's card look. */
+   #account-menu, restyled to match this app's card look.
+
+   Positioning (was inline on the element): it occupies the second grid
+   column of the top row, pinned to the far right. No border-left divider —
+   with the brand as its only row-mate it would have been a rule floating in
+   open space rather than a separator between two adjacent controls. */
 .navbar-account {
   position: relative;
-  flex-shrink: 0;
+  justify-self: end;
 }
 
 .navbar-account-btn {
@@ -521,21 +543,18 @@ tbody tr:hover {
 
 /* Responsive breakpoints ---------------------------------------------- */
 
-/* Tablet / narrow desktop: let the nav wrap onto a second line instead of
-   overflowing, and let page headers wrap their action buttons below the
-   title rather than squeezing everything onto one row. */
+/* Tablet / narrow desktop: tighten the nav so it wraps onto fewer lines, and
+   let page headers wrap their action buttons below the title rather than
+   squeezing everything onto one row. Wrapping and the full-width nav row are
+   now unconditional (see .navbar-container / .navbar-nav above), so this
+   block only adjusts spacing. */
 @media (max-width: 900px) {
   .navbar-container {
-    flex-wrap: wrap;
-    height: auto;
     padding: 0.75rem 0;
-    row-gap: 0.5rem;
   }
 
   .navbar-nav {
-    flex-wrap: wrap;
     gap: 0.4rem;
-    width: 100%;
   }
 
   .nav-link {
