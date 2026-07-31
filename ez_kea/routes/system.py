@@ -23,6 +23,7 @@ from ..core.config_manager import (
 )
 from ..core.settings_manager import load_settings, save_settings
 from ..core.security import validate_kea_command, validate_log_file_path, InvalidKeaCommandError, InvalidLogPathError
+from ..core.kea_ctrl import send_command, find_unix_socket_path, ControlChannelError
 
 system_bp = Blueprint('system', __name__)
 
@@ -267,6 +268,40 @@ def test_config_version(version: str) -> Union[Response, Tuple[Response, int]]:
         return _invalid_version_response()
     return _test_config_impl(version)
 
+def _reload_via_control_socket(version: str) -> Union[Response, Tuple[Response, int]]:
+    """
+    Reload Kea by sending `config-reload` on the daemon's own UNIX control
+    socket, with no external binary involved.
+
+    This is the reload path for Kea 3.x installed from ISC's own packages,
+    which ship no `keactrl` at all, and it is what ISC points at now that the
+    Control Agent is gone: talk to each daemon's control socket directly.
+    Unlike SIGHUP it reports back whether the reload actually succeeded.
+    """
+    config_key = "DHCP6_CONFIG_FILE" if version == "6" else "DHCP_CONFIG_FILE"
+    dhcp_key = "Dhcp6" if version == "6" else "Dhcp4"
+
+    socket_path = find_unix_socket_path(load_json(current_app.config[config_key]), dhcp_key)
+    if not socket_path:
+        return jsonify({
+            "error": f"Reload strategy is set to 'control socket' but {dhcp_key} has no UNIX "
+                     "control socket configured. Add one under 'control-sockets' in the Kea "
+                     "config before applying."
+        }), 500
+
+    try:
+        response = send_command(socket_path, "config-reload")
+    except ControlChannelError as e:
+        return jsonify({"error": f"Could not reload Kea over its control socket: {e}"}), 500
+
+    if response.get("result") != 0:
+        return jsonify({
+            "error": f"Kea refused the reload: {response.get('text', 'unknown error')}"
+        }), 500
+
+    return jsonify({"message": "KEA service reloaded successfully!"})
+
+
 def _apply_config_impl(version: str) -> Union[Response, Tuple[Response, int]]:
     """Validate syntax and reload the Kea service for `version` with the current config."""
     # Attempt syntax test first
@@ -276,6 +311,8 @@ def _apply_config_impl(version: str) -> Union[Response, Tuple[Response, int]]:
         return test_result
 
     strategy = current_app.config.get("KEA_RELOAD_STRATEGY", "keactrl")
+    if strategy == "control-socket":
+        return _reload_via_control_socket(version)
     if strategy == "sighup":
         container = current_app.config.get("KEA_DOCKER_CONTAINER", "").strip()
         if not container:

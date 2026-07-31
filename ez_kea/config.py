@@ -72,11 +72,17 @@ class Config:
     DHCP6_CONFIG_FILE_IN_CONTAINER = os.getenv("DHCP6_CONFIG_FILE_IN_CONTAINER", "")
     DHCP6_LOG_FILE_IN_CONTAINER    = os.getenv("DHCP6_LOG_FILE_IN_CONTAINER", "")
 
-    # Reload strategy: "keactrl" (default; runs `KEA_CTRL_CMD reload`) or
-    # "sighup" (runs `docker kill -s HUP <KEA_DOCKER_CONTAINER>`). Minimal Kea
-    # Docker images often lack /etc/kea/keactrl.conf, which keactrl requires
-    # to run at all — "sighup" is the supported alternative for those
-    # deployments. This is an explicit, documented choice, never inferred:
-    # guessing wrong here is worse than requiring one extra setting.
+    # Reload strategy, one of:
+    #   "keactrl"        (default) runs `KEA_CTRL_CMD reload`
+    #   "control-socket" sends `config-reload` on the daemon's UNIX control
+    #                    socket -- no external binary, and the only strategy
+    #                    that reports whether the reload actually succeeded.
+    #                    Required for Kea 3.x from ISC's own packages, which
+    #                    ship no keactrl at all.
+    #   "sighup"         runs `docker kill -s HUP <KEA_DOCKER_CONTAINER>`, for
+    #                    minimal Kea Docker images that lack the
+    #                    /etc/kea/keactrl.conf keactrl needs to run at all.
+    # This is an explicit, documented choice, never inferred: guessing wrong
+    # here is worse than requiring one extra setting.
     KEA_RELOAD_STRATEGY = os.getenv("KEA_RELOAD_STRATEGY", "keactrl")
     KEA_DOCKER_CONTAINER = os.getenv("KEA_DOCKER_CONTAINER", "")

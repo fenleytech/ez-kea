@@ -298,12 +298,18 @@
       <div class="form-group">
         <label class="form-label" for="kea-reload-strategy">Reload Strategy</label>
         <select class="form-control" id="kea-reload-strategy" name="kea-reload-strategy" onchange="updateDockerFieldsVisibility()">
-          <option value="keactrl" {% if ez_kea_settings.kea_reload_strategy != 'sighup' %}selected{% endif %}>keactrl reload</option>
+          <option value="keactrl" {% if ez_kea_settings.kea_reload_strategy not in ('sighup', 'control-socket') %}selected{% endif %}>keactrl reload</option>
+          <option value="control-socket" {% if ez_kea_settings.kea_reload_strategy == 'control-socket' %}selected{% endif %}>Control socket (config-reload)</option>
           <option value="sighup" {% if ez_kea_settings.kea_reload_strategy == 'sighup' %}selected{% endif %}>Docker container SIGHUP (docker kill -s HUP)</option>
         </select>
         <small style="color:var(--text-secondary);">
+          <strong>Kea 3.x installed from ISC's own packages ships no <code>keactrl</code> at all</strong> —
+          pick "Control socket" there. It sends <code>config-reload</code> straight to the daemon,
+          needs no external binary, and is the only strategy that reports whether the reload
+          actually succeeded. It requires a <code>unix</code> entry under the daemon's
+          <code>control-sockets</code>.<br>
           Minimal Kea Docker images often don't ship <code>/etc/kea/keactrl.conf</code>, which
-          <code>keactrl reload</code> requires — pick "Docker container SIGHUP" for those deployments.
+          <code>keactrl reload</code> requires — "Docker container SIGHUP" covers those.
           This is never guessed; pick it explicitly.
         </small>
       </div>

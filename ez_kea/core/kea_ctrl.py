@@ -16,15 +16,19 @@ change is the config key: Kea 3.0 renamed the singular `control-socket`
 object to a `control-sockets` list so a daemon can expose UNIX plus HTTP/HTTPS
 at once. find_unix_socket_path() reads both spellings.
 
-Only ever sends commands from the ALLOWED_COMMANDS allowlist: this is a
-read-only status probe, not a general command channel, so there's no path
-for user input to choose an arbitrary Kea command to run.
+Only ever sends commands from the ALLOWED_COMMANDS allowlist, so there is no
+path for user input to choose an arbitrary Kea command to run. Every allowed
+command is parameterless and is issued on the operator's explicit action --
+nothing here forwards user-supplied arguments to the daemon.
 """
 import json
 import socket
 from typing import Any, Dict
 
-ALLOWED_COMMANDS = {"ha-heartbeat", "status-get"}
+# config-reload makes the daemon re-read its own config file from disk. It is
+# how you reload a Kea 3.x installed from ISC's packages, which ship no
+# keactrl at all -- see the "control-socket" reload strategy in routes/system.py.
+ALLOWED_COMMANDS = {"ha-heartbeat", "status-get", "config-reload"}
 
 
 class ControlChannelError(Exception):

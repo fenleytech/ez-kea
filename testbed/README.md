@@ -66,8 +66,10 @@ All four of these were found by actually running this target, not from the docs:
 1. **`keactrl` does not exist in ISC's 3.2 packages.** Not in `isc-kea-common`,
    not anywhere on the filesystem — Ubuntu's 2.x `kea-common` does ship it at
    `/usr/sbin/keactrl`. EZ-KEA's default `keactrl reload` strategy therefore
-   cannot work here. Use the **Docker container SIGHUP** strategy (see the
-   reload note further down); it is not optional for this target.
+   cannot work here. Set **Reload Strategy → Control socket** in Global
+   Settings (`KEA_RELOAD_STRATEGY=control-socket`), which sends `config-reload`
+   down the daemon's own socket — this is ISC's recommended direction now that
+   the Control Agent is gone, and it reports whether the reload succeeded.
    Note `keactrl` is a *different* tool from the removed Control Agent — it is
    still in the 3.2 source tree, ISC's packaging just doesn't install it.
 2. **Logger `output` must be under `/var/log/kea`.** Kea 3.x rejects anything

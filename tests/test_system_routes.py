@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Kaleb Fenley
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
+import json
 import os
 import pytest
 from flask import Flask
@@ -202,6 +203,94 @@ def test_apply_config_syntax_failure(mock_subprocess_run, client):
     mock_subprocess_run.assert_called_once()
     assert response.status_code == 500
     assert "Syntax error" in response.json["error"]
+
+# ── control-socket reload strategy (Kea 3.x, which ships no keactrl) ────────
+
+def _use_control_socket_strategy(app, tmp_path, dhcp_key="Dhcp4", version="4"):
+    """Point the app at a real config file carrying a UNIX control socket and
+    select the control-socket reload strategy."""
+    config_file = tmp_path / f"kea-dhcp{version}.conf"
+    config_file.write_text(json.dumps({dhcp_key: {"control-sockets": [
+        {"socket-type": "unix", "socket-name": f"/var/run/kea/kea-dhcp{version}-ctrl.sock"},
+    ]}}))
+    app.config["DHCP6_CONFIG_FILE" if version == "6" else "DHCP_CONFIG_FILE"] = str(config_file)
+    app.config["KEA_RELOAD_STRATEGY"] = "control-socket"
+
+
+@pytest.mark.parametrize("version,dhcp_key", [("4", "Dhcp4"), ("6", "Dhcp6")])
+@patch('subprocess.run')
+def test_apply_config_reloads_over_control_socket(mock_subprocess_run, client, app, tmp_path, version, dhcp_key):
+    """ISC's Kea 3.x packages ship no keactrl, so the reload must be able to
+    go straight down the daemon's own control socket instead."""
+    mock_subprocess_run.return_value.returncode = 0
+    _use_control_socket_strategy(app, tmp_path, dhcp_key, version)
+
+    with patch('ez_kea.routes.system.send_command', return_value={"result": 0, "text": "ok"}) as send:
+        response = client.post(f"/apply-config/{version}")
+
+    assert response.status_code == 200
+    assert response.json["message"] == "KEA service reloaded successfully!"
+    assert send.call_args[0][1] == "config-reload"
+    assert send.call_args[0][0] == f"/var/run/kea/kea-dhcp{version}-ctrl.sock"
+    # Only the syntax check shelled out; the reload itself used no binary.
+    mock_subprocess_run.assert_called_once()
+
+
+@patch('subprocess.run')
+def test_apply_config_control_socket_reports_daemon_refusal(mock_subprocess_run, client, app, tmp_path):
+    """Unlike SIGHUP, this strategy gets a real answer back — a refused reload
+    must surface as an error rather than a cheerful success."""
+    mock_subprocess_run.return_value.returncode = 0
+    _use_control_socket_strategy(app, tmp_path)
+
+    with patch('ez_kea.routes.system.send_command',
+               return_value={"result": 1, "text": "configuration rejected"}):
+        response = client.post("/apply-config")
+
+    assert response.status_code == 500
+    assert "configuration rejected" in response.json["error"]
+
+
+@patch('subprocess.run')
+def test_apply_config_control_socket_unreachable_is_reported(mock_subprocess_run, client, app, tmp_path):
+    mock_subprocess_run.return_value.returncode = 0
+    _use_control_socket_strategy(app, tmp_path)
+
+    from ez_kea.core.kea_ctrl import ControlChannelError
+    with patch('ez_kea.routes.system.send_command',
+               side_effect=ControlChannelError("Could not reach control socket")):
+        response = client.post("/apply-config")
+
+    assert response.status_code == 500
+    assert "control socket" in response.json["error"].lower()
+
+
+@patch('subprocess.run')
+def test_apply_config_control_socket_requires_a_configured_socket(mock_subprocess_run, client, app, tmp_path):
+    """Selecting the strategy against a config with no UNIX socket must fail
+    loudly at apply time rather than silently doing nothing."""
+    mock_subprocess_run.return_value.returncode = 0
+    config_file = tmp_path / "kea-dhcp4.conf"
+    config_file.write_text(json.dumps({"Dhcp4": {"control-sockets": [
+        {"socket-type": "http", "socket-address": "127.0.0.1", "socket-port": 8000},
+    ]}}))
+    app.config["DHCP_CONFIG_FILE"] = str(config_file)
+    app.config["KEA_RELOAD_STRATEGY"] = "control-socket"
+
+    response = client.post("/apply-config")
+
+    assert response.status_code == 500
+    assert "no UNIX control socket" in response.json["error"]
+
+
+def test_config_reload_is_allowlisted_but_arbitrary_commands_are_not():
+    """The control channel stays an allowlist — adding config-reload must not
+    turn it into a general command channel."""
+    from ez_kea.core.kea_ctrl import ALLOWED_COMMANDS
+    assert "config-reload" in ALLOWED_COMMANDS
+    for forbidden in ("config-set", "shutdown", "lease4-wipe", "config-write"):
+        assert forbidden not in ALLOWED_COMMANDS
+
 
 @patch('subprocess.run')
 def test_apply_config_reload_failure(mock_subprocess_run, client):
