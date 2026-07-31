@@ -52,6 +52,13 @@ targets rebuilds the same service — bring the old one down first
 (`docker compose -f testbed/docker-compose.yml down`) so you aren't running a
 stale container against a freshly built image.
 
+Both also share `kea-entrypoint.sh`, which clears the stale PID file before
+starting Kea. Without it, Kea writes its own PID 1 to the PID file, sees that
+PID alive on the next start, and aborts with `DHCP4_ALREADY_RUNNING` — which
+with `restart: unless-stopped` becomes a permanent crash loop that only
+`--force-recreate` clears. `docker compose restart` used to trigger it every
+time.
+
 **Why the 3.2 target matters.** Kea 3.0 renamed the singular `control-socket`
 object to a `control-sockets` list, and 3.2 dropped the Control Agent. Ubuntu
 ships no 3.x package, so without this target nothing catches EZ-KEA emitting
@@ -89,18 +96,13 @@ All four of these were found by actually running this target, not from the docs:
 (`control-sockets`, and a `/var/log/kea/` logger path):
 
 ```bash
-mkdir -p data/var/log/kea    # may need the container: see below
 cp data/etc/kea/kea-dhcp4.conf.kea3.example data/etc/kea/kea-dhcp4.conf
 ```
 
-`data/var/log` is created root-owned by the container, so if that `mkdir`
-fails, make it from inside one:
-
-```bash
-docker run --rm -v "$PWD/data/var/log:/var/log" \
-  $(docker compose -f docker-compose.yml config --images | head -1) \
-  sh -c 'mkdir -p /var/log/kea && chmod 750 /var/log/kea'
-```
+`/var/log/kea` is created for you at container start by `kea-entrypoint.sh`,
+which also pre-creates the log files mode 644 — Kea 3.x would otherwise make
+them 640 root:root, which the host user cannot read through the bind mount,
+blinding EZ-KEA's own `/logs` viewer against this testbed.
 
 Because the log lives one directory deeper on this target, the in-container
 log path differs from the 2.x default:

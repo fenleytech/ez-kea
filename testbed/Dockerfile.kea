@@ -6,5 +6,10 @@ RUN apt-get update && \
     mkdir -p /var/run/kea /run/kea /var/lib/kea /var/log && \
     chmod 777 /var/run/kea /run/kea
 
-# The default Kea config will be mounted via docker-compose into /etc/kea
+# The default Kea config will be mounted via docker-compose into /etc/kea.
+# The entrypoint clears the stale PID file that otherwise crash-loops this
+# container across restarts; see kea-entrypoint.sh.
+COPY kea-entrypoint.sh /usr/local/bin/kea-entrypoint.sh
+RUN chmod +x /usr/local/bin/kea-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/kea-entrypoint.sh"]
 CMD ["kea-dhcp4", "-c", "/etc/kea/kea-dhcp4.conf"]

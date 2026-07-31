@@ -53,4 +53,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Same contract as the 2.x target: config is bind-mounted in at /etc/kea by
 # docker-compose, and the container name stays kea-testbed-kea-1 so the
 # `docker exec` commands in .env.testbed work against either target unchanged.
+# The shared entrypoint clears the stale PID file that otherwise crash-loops
+# this container across restarts, and creates the /var/log/kea directory 3.x
+# insists on; see kea-entrypoint.sh.
+COPY kea-entrypoint.sh /usr/local/bin/kea-entrypoint.sh
+RUN chmod +x /usr/local/bin/kea-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/kea-entrypoint.sh"]
 CMD ["kea-dhcp4", "-c", "/etc/kea/kea-dhcp4.conf"]
