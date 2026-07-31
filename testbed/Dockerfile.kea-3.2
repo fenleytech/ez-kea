@@ -1,0 +1,56 @@
+# Kea 3.2.0 testbed target.
+#
+# The default target (Dockerfile.kea) installs Ubuntu's own `kea-dhcp4-server`,
+# which is stuck on 2.x. Ubuntu ships no 3.x package, so this pulls ISC's
+# official packages from their Cloudsmith repo instead.
+#
+# Why this target exists: Kea 3.0 renamed the singular `control-socket` object
+# to a `control-sockets` list, and 3.2 dropped the Control Agent. The 2.x
+# testbed cannot exercise either, so nothing would otherwise catch EZ-KEA
+# generating config that a current Kea rejects.
+#
+#   KEA_DOCKERFILE=Dockerfile.kea-3.2 docker compose -f testbed/docker-compose.yml up -d --build
+#
+# Note the package names are `isc-kea-*`, not Ubuntu's `kea-*`; the binaries
+# they install are still plain `kea-dhcp4` / `kea-dhcp6` / `keactrl`, so
+# .env.testbed's `docker exec kea-testbed-kea-1 kea-dhcp4` works unchanged.
+
+FROM ubuntu:24.04
+
+ARG KEA_REPO=kea-3-2
+ARG UBUNTU_CODENAME=noble
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fetch ISC's signing key into its own keyring and scope the repo to it with
+# signed-by, rather than piping Cloudsmith's setup.sh into a root shell.
+RUN curl -1sLf "https://dl.cloudsmith.io/public/isc/${KEA_REPO}/gpg.key" \
+        | gpg --dearmor -o "/usr/share/keyrings/isc-${KEA_REPO}.gpg" \
+    && echo "deb [signed-by=/usr/share/keyrings/isc-${KEA_REPO}.gpg] \
+https://dl.cloudsmith.io/public/isc/${KEA_REPO}/deb/ubuntu ${UBUNTU_CODENAME} main" \
+        > "/etc/apt/sources.list.d/isc-${KEA_REPO}.list"
+
+# No isc-kea-ctrl-agent: the Control Agent is gone as of 3.2, and EZ-KEA never
+# used it -- it talks to the daemon socket directly.
+#
+# Heads up: these packages ship NO `keactrl` at all (Ubuntu's 2.x kea-common
+# does, at /usr/sbin/keactrl). EZ-KEA's default "keactrl reload" strategy
+# therefore cannot work against this target -- use the SIGHUP strategy, as
+# described in README.md.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        isc-kea-dhcp4 isc-kea-dhcp6 \
+        iproute2 tcpdump \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/run/kea /run/kea /var/lib/kea /var/log \
+    && chmod 750 /var/run/kea /run/kea
+
+# Kea 3.x refuses to open a control socket whose directory is more permissive
+# than 750 ("socket path:/var/run/kea ... has more relaxed permissions than
+# 750"), so the 2.x target's chmod 777 is deliberately NOT copied here.
+
+# Same contract as the 2.x target: config is bind-mounted in at /etc/kea by
+# docker-compose, and the container name stays kea-testbed-kea-1 so the
+# `docker exec` commands in .env.testbed work against either target unchanged.
+CMD ["kea-dhcp4", "-c", "/etc/kea/kea-dhcp4.conf"]

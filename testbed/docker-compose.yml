@@ -4,7 +4,12 @@ services:
   kea:
     build:
       context: .
-      dockerfile: Dockerfile.kea
+      # Defaults to the Ubuntu-packaged Kea 2.x. Set KEA_DOCKERFILE to
+      # Dockerfile.kea-3.2 to run the same testbed against a source-built
+      # Kea 3.2.0 instead -- see testbed/README.md. The container name is
+      # deliberately identical for both, so .env.testbed's `docker exec`
+      # commands and test_suite.sh work against either without changes.
+      dockerfile: ${KEA_DOCKERFILE:-Dockerfile.kea}
     container_name: kea-testbed-kea-1
     volumes:
       - ./data/etc/kea:/etc/kea
