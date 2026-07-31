@@ -17,7 +17,7 @@ def app(tmp_path):
         "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/test.db",
     })
     app.config["TESTING"] = True
-    # CSRF protection (AUDIT_FINDINGS.md 1.4) is exercised in test_csrf.py against
+    # CSRF protection is exercised in test_csrf.py against
     # a real client; these tests POST directly without a token/session, so it's
     # disabled here the same way Flask's own docs recommend for route unit tests.
     app.config["WTF_CSRF_ENABLED"] = False
@@ -75,7 +75,7 @@ def test_delete_subnet6_post(client):
 
 @patch("ez_kea.routes.dhcp6.has_overlap")
 def test_new_subnet6_auto_creates_missing_shared_network(mock_overlap, app):
-    """Regression test for AUDIT_FINDINGS 2.6: new_subnet6() had no else
+    """Regression test: new_subnet6() had no else
     branch, so if shared_network_name didn't match any existing shared
     network, save_json()+redirect() still fired as if it succeeded but
     nothing was ever written. Unlike v4's new_subnet(), it should
@@ -99,7 +99,7 @@ def test_new_subnet6_auto_creates_missing_shared_network(mock_overlap, app):
 
 @patch("ez_kea.routes.dhcp6.has_overlap")
 def test_new_subnet6_missing_shared_network_name_returns_form_error(mock_overlap, client):
-    """Regression test for AUDIT_FINDINGS 2.6: an omitted
+    """Regression test: an omitted
     shared-network-name field used to silently drop the subnet too."""
     mock_overlap.return_value = False
     response = client.post("/new-subnet6", data={"subnet": "2001:db8:2::/64"})
@@ -108,7 +108,7 @@ def test_new_subnet6_missing_shared_network_name_returns_form_error(mock_overlap
 
 @patch("ez_kea.routes.dhcp6.has_overlap")
 def test_new_subnet6_pd_length_out_of_range_rejected(mock_overlap, client):
-    """Regression test for AUDIT_FINDINGS 2.7: delegated-len only checked
+    """Regression test: delegated-len only checked
     .isdigit(), so out-of-range values like 0 or 999999 were accepted, and
     a negative value produced a misleading 'required' error."""
     mock_overlap.return_value = False

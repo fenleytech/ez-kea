@@ -45,7 +45,7 @@ def mock_kea_binaries(monkeypatch):
     """
     The `kea-dhcp4`/`keactrl` binaries used throughout these tests are never
     actually installed in the test environment — only `subprocess.run` itself
-    is mocked. Since AUDIT_FINDINGS.md 1.1's fix requires the configured
+    is mocked. Since the command-injection guard requires the configured
     command to resolve to a real, executable binary before we even attempt to
     run it, simulate that resolution succeeding for the allowed binary names
     so these tests continue to exercise the subprocess-mocking behavior they
@@ -225,7 +225,7 @@ def test_apply_config_reload_failure(mock_subprocess_run, client):
 
 @patch('subprocess.run')
 def test_syntax_check_missing_binary(mock_subprocess_run, client):
-    """Regression test for AUDIT_FINDINGS 2.5: /test-config only caught
+    """Regression test: /test-config only caught
     subprocess.CalledProcessError, so a missing Kea binary raised an
     uncaught FileNotFoundError -> raw Flask 500 instead of the app's own
     JSON error format."""
@@ -239,7 +239,7 @@ def test_syntax_check_missing_binary(mock_subprocess_run, client):
 
 @patch('subprocess.run')
 def test_apply_config_missing_reload_binary(mock_subprocess_run, client):
-    """Regression test for AUDIT_FINDINGS 2.5: /apply-config's reload step
+    """Regression test: /apply-config's reload step
     only caught subprocess.CalledProcessError, so a missing keactrl binary
     raised an uncaught FileNotFoundError."""
     import subprocess
@@ -256,7 +256,7 @@ def test_apply_config_missing_reload_binary(mock_subprocess_run, client):
     assert "control binary not found" in response.json["error"]
 
 def test_save_global_settings_non_numeric_timer_returns_form_error(global_settings_client):
-    """Regression test for AUDIT_FINDINGS 2.5: save_global_settings() used
+    """Regression test: save_global_settings() used
     a bare int() with no try/except on timer fields, so a non-numeric
     value caused an unhandled 500 instead of a graceful form error."""
     response = global_settings_client.post("/save-global-settings", data={
@@ -267,7 +267,7 @@ def test_save_global_settings_non_numeric_timer_returns_form_error(global_settin
 
 @pytest.mark.parametrize("value", ["-5", "0", "99999999999"])
 def test_save_global_settings_timer_bounds_rejected(global_settings_client, value):
-    """Regression test for AUDIT_FINDINGS 2.7: global timers accepted
+    """Regression test: global timers accepted
     negative, zero, and arbitrarily large values with no bounds check."""
     response = global_settings_client.post("/save-global-settings", data={
         "valid-lifetime": value,
@@ -287,7 +287,7 @@ def test_save_global_settings_valid_timer_persists(global_settings_app):
     assert config["Dhcp4"]["valid-lifetime"] == 4000
 
 def test_save_global_settings_dedupes_interfaces(global_settings_app):
-    """Regression test for AUDIT_FINDINGS 2.7: interfaces-config accepted
+    """Regression test: interfaces-config accepted
     duplicate interface names with no de-duplication."""
     from conftest import login
     client = login(global_settings_app.test_client(), global_settings_app)
@@ -367,8 +367,8 @@ def test_save_global_settings_v6_options_persist(global_settings_app):
     assert opts["domain-search"] == "home.local"
 
 def test_save_global_settings_v6_repoint_requires_dhcp6_key(global_settings_app, tmp_path):
-    """Regression test mirroring the v4 AUDIT_FINDINGS.md 1.3 repoint-safety
-    check: repointing DHCP6_CONFIG_FILE at a file that already exists but
+    """Regression test mirroring the v4 repoint-safety check: repointing
+    DHCP6_CONFIG_FILE at a file that already exists but
     isn't a valid Dhcp6 config must be refused, not silently overwritten."""
     import json
     bad_target = tmp_path / "not-a-kea6-config.conf"
@@ -416,13 +416,13 @@ def test_save_global_settings_v6_does_not_clobber_v4_settings(global_settings_ap
     assert settings["kea_dhcp4_cmd"] == dhcp4_cmd_before
 
 
-# ── AUDIT_FINDINGS.md 1.1 — RCE via kea_dhcp4_cmd/kea_ctrl_cmd ──────────────
+# ── RCE via kea_dhcp4_cmd/kea_ctrl_cmd ──────────────────────────────────────
 
 @patch('subprocess.run')
 def test_syntax_check_rejects_arbitrary_binary(mock_subprocess_run, app, client):
     """
-    Live PoC from AUDIT_FINDINGS.md 1.1: pointing KEA_DHCP4_CMD at an arbitrary
-    script must be rejected before subprocess.run is ever called.
+    Pointing KEA_DHCP4_CMD at an arbitrary script must be rejected before
+    subprocess.run is ever called.
     """
     app.config["KEA_DHCP4_CMD"] = "/tmp/evil.sh"
 
@@ -575,7 +575,7 @@ def full_client(full_app):
     return login(full_app.test_client(), full_app)
 
 def test_save_settings_rejects_new_malicious_dhcp4_cmd(full_client):
-    """Live PoC from AUDIT_FINDINGS.md 1.1, via the save-settings form field itself."""
+    """The same rejection, via the save-settings form field itself."""
     response = full_client.post("/save-global-settings", data={"kea-dhcp4-cmd": "/tmp/evil.sh"})
     assert response.status_code == 302  # redirects back with a flashed error, nothing saved
 
@@ -602,7 +602,7 @@ def test_save_settings_unrelated_change_survives_unresolvable_existing_command(f
     assert opts.get("domain-name-servers") == "1.1.1.1"
 
 def test_save_settings_rejects_new_malicious_log_file(full_client):
-    """Live PoC from AUDIT_FINDINGS.md 1.2, via the save-settings form field itself."""
+    """An out-of-tree log path must be rejected via the save-settings form field."""
     response = full_client.post("/save-global-settings", data={"dhcp-log-file": "/etc/passwd"})
     assert response.status_code == 302  # redirects back with a flashed error, nothing saved
 
@@ -612,9 +612,9 @@ def test_save_settings_rejects_new_malicious_log_file(full_client):
 
 def test_save_settings_repoint_does_not_overwrite_new_target(full_app, full_client, tmp_path):
     """
-    Live PoC from AUDIT_FINDINGS.md 1.3: repointing dhcp-config-file to a fresh
-    path in the same request that saves other settings must NOT also write the
-    old config's content over that new path.
+    Repointing dhcp-config-file to a fresh path in the same request that saves
+    other settings must NOT also write the old config's content over that new
+    path.
     """
     canary = tmp_path / "victim_file.txt"
     canary.write_text("original victim content — must not be touched")

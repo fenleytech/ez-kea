@@ -3,7 +3,7 @@
 # demo/reset_demo.sh — restore the public demo to its pristine seeded state.
 #
 # Run on a timer (see demo/systemd/ez-kea-demo-reset.timer). Anyone who logs
-# into the demo can create, edit, and delete configuration — EZ-Kea has no
+# into the demo can create, edit, and delete configuration — EZ-KEA has no
 # read-only role — so the demo is expected to drift and is simply rebuilt.
 #
 # The app service is restarted after reseeding rather than left running:

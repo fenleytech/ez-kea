@@ -21,7 +21,7 @@ def app(tmp_path):
         "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/test.db",
     })
     app.config["TESTING"] = True
-    # CSRF protection (AUDIT_FINDINGS.md 1.4) is exercised in test_csrf.py against
+    # CSRF protection is exercised in test_csrf.py against
     # a real client; these tests POST directly without a token/session, so it's
     # disabled here the same way Flask's own docs recommend for route unit tests.
     app.config["WTF_CSRF_ENABLED"] = False
@@ -43,7 +43,7 @@ def test_pools_get(client):
     assert response.status_code == 200
 
 def test_pools_get_with_standalone_subnets(app):
-    """Regression test for AUDIT_FINDINGS 2.1: pools.html referenced a
+    """Regression test: pools.html referenced a
     nonexistent endpoint name for standalone-subnet Options links, which made
     url_for() raise a BuildError and 500 the whole /pools page as soon as any
     standalone subnet existed."""
@@ -108,7 +108,7 @@ def _write_standalone_subnet_config(app):
         }, f)
 
 def test_new_reservation_on_standalone_subnet_succeeds(app):
-    """Regression test for AUDIT_FINDINGS 2.2: new_reservation() only ever
+    """Regression test: new_reservation() only ever
     walked Dhcp4.shared-networks[].subnet4[], so reservations posted against
     a standalone subnet were silently dropped (HTTP 302 'success', nothing
     written). Confirm the reservation is now actually persisted."""
@@ -131,7 +131,7 @@ def test_new_reservation_on_standalone_subnet_succeeds(app):
     assert reservations[0]["hw-address"] == "00:1A:2B:3C:4D:5E"
 
 def test_new_reservation_unknown_subnet_returns_form_error(client):
-    """Regression test for AUDIT_FINDINGS 2.2: posting a reservation for a
+    """Regression test: posting a reservation for a
     subnet that doesn't match any known subnet (standalone or shared) used
     to silently 302 with nothing written. It should now return a form
     error instead."""
@@ -146,7 +146,7 @@ def test_new_reservation_unknown_subnet_returns_form_error(client):
     assert b"not found" in response.data.lower()
 
 def test_new_reservation_invalid_ip_address_returns_form_error(app):
-    """Regression test for AUDIT_FINDINGS 2.4: new_reservation() never
+    """Regression test: new_reservation() never
     validated that ip-address was a real IPv4 address, so a malformed value
     could be saved through the app's own form and later crash
     /mac-reservations. Should now be rejected at submission time."""
@@ -167,7 +167,7 @@ def test_new_reservation_invalid_ip_address_returns_form_error(app):
     assert config["Dhcp4"]["subnet4"][0]["reservations"] == []
 
 def test_new_reservation_all_emoji_hostname_rejected(app):
-    """Regression test for AUDIT_FINDINGS 2.7: the hostname 'required'
+    """Regression test: the hostname 'required'
     check used to run on the raw value before sanitize_hostname() stripped
     it, so an all-emoji hostname passed the non-empty check and then
     silently sanitized down to an empty string. It should now be rejected."""
@@ -184,7 +184,7 @@ def test_new_reservation_all_emoji_hostname_rejected(app):
     assert b"Hostname is required" in response.data
 
 def test_mac_reservations_survives_malformed_ip_address(app):
-    """Regression test for AUDIT_FINDINGS 2.4: mac_reservations()'s sort
+    """Regression test: mac_reservations()'s sort
     key crashed on a non-IPv4 ip-address already present in a config
     (e.g. hand-edited or from an older buggy save). The page must not
     500 even if a bad value is already on disk."""
@@ -213,7 +213,7 @@ def test_mac_reservations_survives_malformed_ip_address(app):
     assert b"192.168.1.20" in response.data
 
 def test_delete_reservation_on_standalone_subnet(app):
-    """Regression test for AUDIT_FINDINGS 2.2: delete_reservation() only
+    """Regression test: delete_reservation() only
     ever walked shared-networks, so it could never remove a reservation
     living on a standalone subnet."""
     config_file = app.config["DHCP_CONFIG_FILE"]

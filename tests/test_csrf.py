@@ -4,10 +4,10 @@
 """
 tests/test_csrf.py
 
-Verifies AUDIT_FINDINGS.md 1.4 is actually closed: with CSRF protection
-enabled (the real, non-test-suite default), a state-changing POST without a
-valid token must be rejected, and a same-session POST carrying the token
-generated for it must succeed.
+Verifies CSRF protection is actually enforced: with it enabled (the real,
+non-test-suite default), a state-changing POST without a valid token must be
+rejected, and a same-session POST carrying the token generated for it must
+succeed.
 """
 import json
 import pytest
@@ -46,8 +46,8 @@ def client(app):
 
 def test_post_without_csrf_token_is_rejected(client):
     """
-    Live PoC from AUDIT_FINDINGS.md 1.4: a forged, tokenless POST (as a hostile
-    third-party page would send) must no longer succeed.
+    A forged, tokenless POST (as a hostile third-party page would send) must
+    not succeed.
     """
     response = client.post("/new-shared-network", data={"shared-network-name": "evil-net"})
     assert response.status_code == 400

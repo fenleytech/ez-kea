@@ -1,6 +1,6 @@
 #!/bin/bash
 # testbed/test_suite.sh
-# DHCP testbed test suite. Run from EZ-Kea project root: cd testbed && bash test_suite.sh
+# DHCP testbed test suite. Run from EZ-KEA project root: cd testbed && bash test_suite.sh
 # Every command has an explicit timeout. Suite should complete in under 2 minutes.
 # Exit code: 0 if all pass, 1 if any fail.
 
@@ -204,7 +204,7 @@ if [[ -n "$cfg_dns" ]] || [[ -n "$cfg_acs" ]]; then
         fi
     fi
 else
-    skip "DNS/ACS delivery test skipped — set in EZ-Kea WebUI first, then re-run"
+    skip "DNS/ACS delivery test skipped — set in EZ-KEA WebUI first, then re-run"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════

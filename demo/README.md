@@ -1,4 +1,4 @@
-# EZ-Kea public demo
+# EZ-KEA public demo
 
 Everything needed to run the demo at <https://demo.ezkea.com> on a fully
 synthetic data set, resetting itself on a timer.
@@ -17,7 +17,7 @@ The live deployment runs on a GCP `e2-micro` in `us-central1` behind Cloudflare.
 
 ## Why it resets
 
-EZ-Kea has no read-only role — every DHCP configuration route is
+EZ-KEA has no read-only role — every DHCP configuration route is
 `@login_required` and nothing more, so any visitor who logs in can create and
 delete subnets, reservations, and options. Rather than restrict the demo (and
 hide the features worth demonstrating), the demo runs the real application

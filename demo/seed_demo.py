@@ -7,7 +7,7 @@ demo/seed_demo.py — build the public demo's data set from scratch.
 
 Writes a self-contained, entirely synthetic "mid-size office" Kea environment
 into a target data directory: DHCPv4 + DHCPv6 configs, active lease CSVs, log
-files, and a fresh EZ-Kea database holding a single known demo account.
+files, and a fresh EZ-KEA database holding a single known demo account.
 
 Everything here is fabricated. No real MAC address, hostname, DUID, or subnet
 from any live network appears in this file, which is the entire point: the
@@ -54,7 +54,7 @@ DEFAULT_DEMO_PASSWORD = "demo"
 LOG_HISTORY_DAYS = 30
 LOG_LINES_PER_HISTORY_DAY = 140
 
-# Above 100 active leases EZ-Kea shows a licensing reminder banner (see
+# Above 100 active leases EZ-KEA shows a licensing reminder banner (see
 # ez_kea/license.py NAG_LEASE_THRESHOLD). Nothing is blocked, but the demo
 # sits well under it so visitors see the product, not a licensing notice.
 TARGET_ACTIVE_LEASES4 = 62
@@ -614,7 +614,7 @@ def write_csv(path: str, columns: list, rows: list) -> None:
 
 
 def seed_database(db_path: str, username: str, password: str, is_admin: bool) -> None:
-    """Recreate the EZ-Kea database with a single, known demo account.
+    """Recreate the EZ-KEA database with a single, known demo account.
 
     Deliberately rebuilt from empty on every run: a visitor who changes the
     demo password (Profile > Change Password is open to any logged-in user)
@@ -660,7 +660,7 @@ def seed_database(db_path: str, username: str, password: str, is_admin: bool) ->
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Seed the EZ-Kea public demo data set.")
+    parser = argparse.ArgumentParser(description="Seed the EZ-KEA public demo data set.")
     parser.add_argument("--target", default="./data",
                         help="Data directory to write into (default: ./data)")
     parser.add_argument("--demo-user", default=DEFAULT_DEMO_USERNAME,
@@ -704,7 +704,7 @@ def main() -> int:
         for day in range(1, LOG_HISTORY_DAYS)
     ])
 
-    # Pin EZ-Kea to this sandbox so the demo can never be re-pointed at a real
+    # Pin EZ-KEA to this sandbox so the demo can never be re-pointed at a real
     # /etc/kea config by the auto-discovery pass on the next restart.
     settings = {
         "dhcp_config_file": config4_path,

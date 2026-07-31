@@ -1,5 +1,5 @@
 [Unit]
-Description=Reset the EZ-Kea public demo to its seeded state
+Description=Reset the EZ-KEA public demo to its seeded state
 After=network.target
 
 [Service]

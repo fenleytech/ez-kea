@@ -1,7 +1,7 @@
 #!/bin/bash
 # start_testbed.sh
-# Starts the EZ-Kea frontend with environment pointing at the Docker testbed.
-# Run this from the EZ-Kea project root.
+# Starts the EZ-KEA frontend with environment pointing at the Docker testbed.
+# Run this from the EZ-KEA project root.
 
 set -a          # export all variables
 source "$(dirname "$0")/.env.testbed"

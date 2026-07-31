@@ -4,7 +4,7 @@
 """
 tests/test_license_nag.py
 
-EZ-Kea's licensing is a license *term*, not a runtime gate (see
+EZ-KEA's licensing is a license *term*, not a runtime gate (see
 ez_kea/license.py). These tests pin that down from both directions:
 
   - Nothing is ever blocked. Config writes must succeed at any lease count,

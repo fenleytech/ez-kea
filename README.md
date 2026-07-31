@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="static/icons/icon-192.png" width="96" alt="EZ-Kea logo">
+  <img src="static/icons/icon-192.png" width="96" alt="EZ-KEA logo">
 </p>
 
-<h1 align="center">EZ-Kea</h1>
+<h1 align="center">EZ-KEA</h1>
 
 <p align="center">
   A zero-config web interface for ISC Kea DHCP. Point it at your server and it finds your config.
@@ -14,9 +14,9 @@
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
 </p>
 
-![EZ-Kea managing DHCPv4 shared networks and pools](docs/images/pools.png)
+![EZ-KEA managing DHCPv4 shared networks and pools](docs/images/pools.png)
 
-EZ-Kea gives ISC Kea a web UI without making you redo your setup. It looks in `/proc` for running `kea-dhcp4` and `kea-dhcp6` processes, finds the config file each one was started with, and edits that file directly. If Kea is not installed it creates a sandbox in `./data/` and runs in demo mode so you can try things out offline.
+EZ-KEA gives ISC Kea a web UI without making you redo your setup. It looks in `/proc` for running `kea-dhcp4` and `kea-dhcp6` processes, finds the config file each one was started with, and edits that file directly. If Kea is not installed it creates a sandbox in `./data/` and runs in demo mode so you can try things out offline.
 
 ## Live demo
 
@@ -26,7 +26,7 @@ It is a shared sandbox with fake data and it resets every 30 minutes, so break w
 
 ## Quick start
 
-Requires **Python 3.10+**. Kea is optional. Without it, EZ-Kea starts in demo mode.
+Requires **Python 3.10+**. Kea is optional. Without it, EZ-KEA starts in demo mode.
 
 ```bash
 git clone https://github.com/fenleytech/ez-kea.git
@@ -59,18 +59,18 @@ This edits your production DHCP config, so a few things matter:
 
 If you are putting it behind a reverse proxy or running Kea in Docker, see the [Security hardening](https://github.com/fenleytech/ez-kea/wiki/Security-Hardening) and [Installation](https://github.com/fenleytech/ez-kea/wiki/Installation) guides in the wiki.
 
-## Why EZ-Kea vs Stork
+## Why EZ-KEA vs Stork
 
 ISC Stork is a great tool if you are managing a fleet of Kea and BIND servers. It gives you central monitoring, HA status, pool utilization, and integrates with Postgres and Grafana. If you have many servers, Stork might be best for you.
 
-EZ-Kea is different. It is for the admin who has a few Kea servers and is tired of hand editing JSON files.
+EZ-KEA is different. It is for the admin who has a few Kea servers and is tired of hand editing JSON files.
 
 - No agents, no database, no extra services
 - Finds your config automatically by looking at running processes
 - Edits the file Kea is actually running, with backup and syntax check
 - A simple interface you can hand to a junior admin or anyone who prefers not to live in a JSON file
 
-If that sounds like you, try EZ-Kea. It is completely free for noncommercial use, homelabs, and personal learning. Commercial use needs a license, but you can get a free 30 day eval to try it at work.
+If that sounds like you, try EZ-KEA. It is completely free for noncommercial use, homelabs, and personal learning. Commercial use needs a license, but you can get a free 30 day eval to try it at work.
 
 ## Features
 
@@ -90,7 +90,7 @@ Systemd unit, reverse proxies, and non-standard Kea layouts are all in the [Inst
 
 ## Licensing
 
-EZ-Kea is source-available under [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+EZ-KEA is source-available under [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
 
 In short:
 
@@ -138,7 +138,7 @@ There is also a containerized Kea testbed that boots a real DHCP server on two v
 cd testbed && bash test_suite.sh
 ```
 
-Bug reports and feature requests are welcome in [Issues](https://github.com/fenleytech/ez-kea/issues). I am not taking pull requests right now. Because EZ-Kea is sold under a commercial license too, merging code needs a licensing agreement with each contributor and that overhead is not worth it for a project this size. A good bug report helps more.
+Bug reports and feature requests are welcome in [Issues](https://github.com/fenleytech/ez-kea/issues). I am not taking pull requests right now. Because EZ-KEA is sold under a commercial license too, merging code needs a licensing agreement with each contributor and that overhead is not worth it for a project this size. A good bug report helps more.
 
 ## License
 

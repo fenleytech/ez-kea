@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """
-license_gen.py — EZ-Kea license key generator (vendor-side CLI tool).
+license_gen.py — EZ-KEA license key generator (vendor-side CLI tool).
 Keep the private key OFFLINE and NEVER distribute it with the application.
 
 Commercial license keys carry identity and an expiry only -- there is no
-lease ceiling or feature flag to encode, because EZ-Kea does not gate anything
+lease ceiling or feature flag to encode, because EZ-KEA does not gate anything
 on the license (see ez_kea/license.py). A key exists so a paying customer's
 install can show who it is licensed to.
 
@@ -44,7 +44,7 @@ def generate(licensee: str, email: str, expires: str, features: list) -> str:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Generate an EZ-Kea license key")
+    ap = argparse.ArgumentParser(description="Generate an EZ-KEA license key")
     ap.add_argument("--licensee",   required=True)
     ap.add_argument("--email",      required=True)
     ap.add_argument("--expires",    required=True, help="YYYY-MM-DD")

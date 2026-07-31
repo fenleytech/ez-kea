@@ -67,7 +67,7 @@ def test_copy_file_backup_and_restore(temp_config_file, temp_backup_dir):
     assert load_json(temp_config_file) == {"foo": "bar"}
 
 
-# ── AUDIT_FINDINGS.md 1.7 — backup/restore path confusion ───────────────────
+# ── backup/restore path confusion ───────────────────────────────────────────
 
 def test_restore_does_not_cross_config_files(tmp_path, temp_backup_dir):
     """

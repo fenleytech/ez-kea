@@ -1,5 +1,5 @@
 [Unit]
-Description=Reset the EZ-Kea public demo every 30 minutes
+Description=Reset the EZ-KEA public demo every 30 minutes
 
 [Timer]
 # Also fires shortly after boot, so a host that was down over a reboot comes

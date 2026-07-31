@@ -1,5 +1,5 @@
 [Unit]
-Description=EZ-Kea public demo
+Description=EZ-KEA public demo
 After=network.target
 
 [Service]
@@ -9,12 +9,12 @@ Group=ezkea
 WorkingDirectory=/srv/ez-kea-demo
 
 # Bind to loopback only and put a TLS-terminating reverse proxy in front.
-# EZ-Kea refuses to start on a non-loopback HOST while SECRET_KEY is still the
+# EZ-KEA refuses to start on a non-loopback HOST while SECRET_KEY is still the
 # default, and the demo has no business being reachable directly on :8080.
 Environment=HOST=127.0.0.1
 Environment=PORT=8080
 
-# Pin the demo to its sandbox data set. Without these, EZ-Kea's auto-discovery
+# Pin the demo to its sandbox data set. Without these, EZ-KEA's auto-discovery
 # would bind to a real /etc/kea config if one ever appears on this host —
 # which is exactly the accident the demo must not have.
 Environment=SETTINGS_FILE=/srv/ez-kea-demo/data/ez-kea-settings.json

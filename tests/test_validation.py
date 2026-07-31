@@ -85,7 +85,7 @@ def test_has_overlap():
     assert has_overlap("10.0.0.0/24", config_data) is False
 
 def test_has_overlap_standalone_subnets():
-    """Regression test for AUDIT_FINDINGS 2.2: has_overlap() only ever
+    """Regression test: has_overlap() only ever
     checked Dhcp4.shared-networks[].subnet4[], never top-level
     Dhcp4.subnet4[] (the standalone subnet list), so duplicate/overlapping
     standalone subnets were silently accepted."""
@@ -115,7 +115,7 @@ def test_validate_ipv4_address():
     assert validate_ipv4_address("") is False
 
 def test_get_active_leases_skips_malformed_expire(tmp_path):
-    """Regression test for AUDIT_FINDINGS 2.5: a malformed `expire` field in
+    """Regression test: a malformed `expire` field in
     the leases CSV (e.g. from a truncated disk-full write) used to crash
     get_active_leases() with an unhandled ValueError, taking down /leases
     and /new-reservation. Malformed rows should be skipped instead."""
@@ -194,7 +194,7 @@ def test_get_active_leases6_missing_file_returns_empty():
     assert get_active_leases6("/nonexistent/leases6.csv") == []
 
 def test_return_available_ips_includes_standalone_subnets(tmp_path):
-    """Regression test for AUDIT_FINDINGS 2.2: return_available_ips() only
+    """Regression test: return_available_ips() only
     ever walked Dhcp4.shared-networks[].subnet4[], so standalone subnets
     never appeared in the /new-reservation form's subnet dropdown."""
     leases_file = tmp_path / "leases.csv"
@@ -211,7 +211,7 @@ def test_return_available_ips_includes_standalone_subnets(tmp_path):
     assert len(result["192.168.5.0/29"]) > 0
 
 
-# ── AUDIT_FINDINGS.md 1.9 — option-data sanitization ────────────────────────
+# ── option-data sanitization ─────────────────────────────────────────────────
 
 def test_validate_option_data_allows_normal_values():
     assert validate_option_data("1.1.1.1, 8.8.8.8") is True
@@ -219,7 +219,7 @@ def test_validate_option_data_allows_normal_values():
     assert validate_option_data("http://acs.example.com/cwmp") is True
 
 def test_validate_option_data_rejects_script_tag():
-    """Live-tested payload from AUDIT_FINDINGS.md 1.9."""
+    """A script tag in an option value must be rejected."""
     assert validate_option_data("<script>alert(document.cookie)</script>") is False
 
 def test_validate_option_data_rejects_control_characters():
@@ -230,7 +230,7 @@ def test_validate_option_data_rejects_empty():
     assert validate_option_data("") is False
 
 
-# ── AUDIT_FINDINGS.md 1.10 — sanitize_hostname() applied to lease hostnames ─
+# ── sanitize_hostname() applied to lease hostnames ──────────────────────────
 
 def test_get_active_leases_sanitizes_hostname(tmp_path):
     leases_file = tmp_path / "kea-leases4.csv"

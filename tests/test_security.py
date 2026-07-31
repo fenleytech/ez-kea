@@ -4,9 +4,8 @@
 """
 tests/test_security.py
 
-Unit tests for ez_kea/core/security.py — the guardrails closing
-AUDIT_FINDINGS.md 1.1 (RCE via kea_dhcp4_cmd/kea_ctrl_cmd) and
-1.2 (arbitrary file read via dhcp_log_file).
+Unit tests for ez_kea/core/security.py — the guardrails against RCE via
+kea_dhcp4_cmd/kea_ctrl_cmd and arbitrary file reads via dhcp_log_file.
 """
 import os
 import pytest
@@ -108,7 +107,7 @@ class TestValidateLogFilePath:
         assert validate_log_file_path(candidate, str(config_file), str(tmp_path / "fallback.log")) == candidate
 
     def test_rejects_etc_passwd(self, tmp_path):
-        """Live PoC from AUDIT_FINDINGS.md 1.2."""
+        """A log path pointing at /etc/passwd must be refused."""
         config_file = tmp_path / "kea-dhcp4.conf"
         config_file.write_text('{}')
         with pytest.raises(InvalidLogPathError):
