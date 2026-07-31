@@ -19,7 +19,7 @@ from ..core.ha_manager import (
     find_ha_hook, get_ha_params, set_ha_config, remove_ha_config, parse_ha_form,
     DEFAULT_HA_LIBRARY_PATH,
 )
-from ..core.kea_ctrl import send_command, ControlChannelError
+from ..core.kea_ctrl import send_command, find_unix_socket_path, ControlChannelError
 
 ha_bp = Blueprint('ha', __name__)
 
@@ -82,7 +82,7 @@ def save_ha_config6() -> Response:
 
 def _ha_status_response(config_file: str, dhcp_key: str) -> Response:
     config = load_json(config_file)
-    socket_path = config.get(dhcp_key, {}).get("control-socket", {}).get("socket-name", "")
+    socket_path = find_unix_socket_path(config, dhcp_key)
     try:
         response = send_command(socket_path, "ha-heartbeat")
     except ControlChannelError as e:

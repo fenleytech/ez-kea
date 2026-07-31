@@ -125,3 +125,84 @@ def test_api_ha_status6_no_socket_returns_502(client, app):
     response = client.get("/api/ha-status6")
     assert response.status_code == 502
     assert "error" in response.get_json()
+
+
+def _serve_one_ha_heartbeat(sock_path):
+    """Stand up a throwaway UNIX socket that answers a single ha-heartbeat."""
+    import socket as _socket
+    import threading
+
+    srv = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    srv.bind(sock_path)
+    srv.listen(1)
+
+    def _serve():
+        conn, _ = srv.accept()
+        with conn:
+            while conn.recv(65536):
+                pass
+            conn.sendall(json.dumps({
+                "result": 0,
+                "text": "HA peer status returned.",
+                "arguments": {"state": "hot-standby"},
+            }).encode("utf-8"))
+
+    thread = threading.Thread(target=_serve, daemon=True)
+    thread.start()
+    return srv, thread
+
+
+@pytest.mark.parametrize("socket_block", [
+    pytest.param(
+        lambda p: {"control-socket": {"socket-type": "unix", "socket-name": p}},
+        id="legacy-singular",
+    ),
+    pytest.param(
+        lambda p: {"control-sockets": [{"socket-type": "unix", "socket-name": p}]},
+        id="kea3-list",
+    ),
+    pytest.param(
+        lambda p: {"control-sockets": [
+            {"socket-type": "http", "socket-address": "127.0.0.1", "socket-port": 8000},
+            {"socket-type": "unix", "socket-name": p},
+        ]},
+        id="kea3-http-plus-unix",
+    ),
+])
+def test_api_ha_status_reads_both_control_socket_spellings(client, app, tmp_path, socket_block):
+    """Regression test: /api/ha-status only ever read the pre-3.0 singular
+    `control-socket` key, so on a Kea 3.0+ box — where the key is the
+    `control-sockets` list, which is also what Kea itself rewrites the
+    singular form into on any config-write — it found no socket and 502'd
+    with 'no control-socket configured' even though the daemon was healthy."""
+    sock_path = str(tmp_path / "kea4-ctrl.sock")
+    srv, thread = _serve_one_ha_heartbeat(sock_path)
+    try:
+        config = json.loads(open(app.config["DHCP_CONFIG_FILE"]).read())
+        config["Dhcp4"].update(socket_block(sock_path))
+        with open(app.config["DHCP_CONFIG_FILE"], "w") as f:
+            json.dump(config, f)
+
+        response = client.get("/api/ha-status")
+
+        assert response.status_code == 200
+        assert response.get_json()["state"] == {"state": "hot-standby"}
+    finally:
+        srv.close()
+        thread.join(timeout=2)
+
+
+def test_api_ha_status_http_only_daemon_returns_clear_error(client, app):
+    """A Kea 3.0+ daemon exposing only an HTTP listener has no channel we
+    speak — that must be a clean 502, not a connect() to a bogus path."""
+    config = json.loads(open(app.config["DHCP_CONFIG_FILE"]).read())
+    config["Dhcp4"]["control-sockets"] = [
+        {"socket-type": "http", "socket-address": "127.0.0.1", "socket-port": 8000},
+    ]
+    with open(app.config["DHCP_CONFIG_FILE"], "w") as f:
+        json.dump(config, f)
+
+    response = client.get("/api/ha-status")
+
+    assert response.status_code == 502
+    assert "No UNIX control socket" in response.get_json()["error"]
