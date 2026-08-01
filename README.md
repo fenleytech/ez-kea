@@ -5,25 +5,47 @@
 <h1 align="center">EZ-KEA</h1>
 
 <p align="center">
-  A zero-config web interface for ISC Kea DHCP. Point it at your server and it finds your config.
+  <b>Stop editing Kea JSON by hand.</b><br>
+  A web UI for ISC Kea DHCP that manages the config your daemons already run.
 </p>
 
 <p align="center">
   <a href="https://github.com/fenleytech/ez-kea/releases"><img src="https://img.shields.io/github/v/release/fenleytech/ez-kea?label=version&color=blue" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/kea-2.x%20%7C%203.x-blue.svg" alt="Supports ISC Kea 2.x and 3.x">
+  <a href="#development"><img src="https://img.shields.io/badge/tests-381-brightgreen.svg" alt="381 tests"></a>
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
 </p>
 
 ![EZ-KEA managing DHCPv4 shared networks and pools](docs/images/pools.png)
 
-EZ-KEA gives ISC Kea a web UI without making you redo your setup. It looks in `/proc` for running `kea-dhcp4` and `kea-dhcp6` processes, finds the config file each one was started with, and edits that file directly. If Kea is not installed it creates a sandbox in `./data/` and runs in demo mode so you can try things out offline.
+EZ-KEA is a self-hosted web interface for ISC Kea DHCP. It installs on the same host as your Kea daemons, works out which configuration file they are actually running, and lets you manage subnets, pools, reservations, prefix delegation, DHCP options and the HA hook through forms instead of nested JSON. It also indexes your Kea logs so you can answer "who had this address three weeks ago" without grepping gzipped archives.
+
+It is not a DHCP server and does not replace one. Uninstall it and what's left behind is an ordinary Kea config file your daemons keep serving from.
+
+## Why EZ-KEA?
+
+Kea is a good DHCP server with a configuration format that is genuinely painful to edit by hand. A subnet lives several objects deep, a pool is a string inside an array inside that object, and a stray comma takes DHCP down for everyone. The usual answers are to write your own templating around it, or to adopt a fleet-management platform that wants to own your deployment.
+
+EZ-KEA takes the narrow path instead:
+
+- **It edits your real config, in place.** No parallel database, no import/export step, nothing to reconcile when someone edits the JSON by hand.
+- **It finds that config itself.** No paths to enter before you can see anything, and no chance of pointing at a stale copy.
+- **It backs up before every write** and refuses the write if the backup fails, then syntax-checks with Kea's own binary before applying.
+- **It stays out of the way.** One Python process, no agents, no external database server, no hosted control plane, no outbound network calls.
+
+## Who it's for
+
+Network and infrastructure engineers, ISPs, MSPs, and anyone running Kea in production who wants a management interface without redesigning the deployment around it. Homelabs are welcome too — noncommercial use is free and unlimited.
 
 ## Live demo
 
 **<https://demo.ezkea.com>** — the login page comes with the demo account already filled in (`demo` / `demo`), just hit Sign In.
 
 It is a shared sandbox with fake data and it resets every 30 minutes, so break whatever you want.
+
+More screenshots: [log search](docs/images/logsearch.png) · [adding a subnet](docs/images/new-subnet.png) · [IPv6 pools and prefix delegation](docs/images/pools6.png) · [high availability](docs/images/ha.png) · [reservations](docs/images/reservations.png) · [leases](docs/images/leases.png)
 
 ## Quick start
 
@@ -101,43 +123,55 @@ daemon's own socket and reports whether the reload actually succeeded. Make sure
 the daemon has a `control-socket` (or 3.0+ `control-sockets`) block — ISC's
 shipped config does.
 
+## Architecture
+
+One Python process (waitress serving a Flask app) on the same host as Kea.
+
+- **Discovery.** EZ-KEA determines the config file the running Kea process is actually using, so you never tell it where your config lives and it can't drift onto a stale copy. Mechanically it reads `/proc` for `kea-dhcp4` and `kea-dhcp6` and takes the path each daemon was launched with, falling back to `/etc/kea/` and then `/usr/local/etc/kea/`. Every path is overridable in Settings. With no Kea present it sandboxes to `./data/` and runs in demo mode.
+- **In-place editing.** Changes go into Kea's own JSON. Writes to a given config file are serialized with a lock.
+- **Backup, validate, apply.** Every config write copies the existing file first and aborts if that copy fails, keeping the hundred most recent (namespaced by a hash of the config path, so a restore can't grab the wrong file's backup). Applying runs `kea-dhcpN -t` and stops on failure, then reloads via `keactrl`, the control socket's `config-reload`, or a SIGHUP to a Docker container — an explicit setting, never guessed.
+- **Storage.** Two embedded SQLite files under `./data/`: one for local accounts and settings, one a disposable log index that rebuilds itself if you delete it. No Postgres, no MySQL, no broker, nothing else to run.
+- **No egress.** No telemetry, no CDN, no update check, no license server. Fonts and icons are vendored; license keys verify offline against a public key compiled into the application. It runs on an isolated management VLAN with no internet access.
+
+## What it does
+
+- **DHCPv4 and DHCPv6** — shared networks, standalone subnets, address pools, and per-subnet DHCP options for both families. Subnets are created and deleted through the UI (one address pool each); options are editable in place.
+- **Prefix delegation** — `pd-pools` with a delegated length, validated against the pool's own prefix, so downstream routers and CPE get a block rather than a single address.
+- **Reservations** — MAC-based for DHCPv4; DUID-based for DHCPv6, covering fixed addresses, delegated prefixes, or both on one reservation.
+- **High availability** — writes and edits Kea's `libdhcp_ha.so` hook for hot-standby, load-balancing or passive-backup, with the peer list, roles and timers as fields and the peer set validated before saving. A heartbeat button reads current peer state back off the daemon's control socket. EZ-KEA configures HA and reads its status; it does not drive failover, and the Control Agent each peer talks to is out of scope.
+- **Historical log search** — a background thread indexes your Kea logs into SQLite (FTS5 where available), including rotated and gzipped archives, and survives rotation by inode change, truncation or `copytruncate`. Search by MAC (any spelling, including inside a client-id or DUID), IPv4, IPv6, CIDR range, or free text, filtered by severity, address family and time range. Results export to CSV and every search is a linkable URL. Retention defaults to 365 days.
+- **Leases** — active DHCPv4 and DHCPv6 lease tables read from Kea's memfile CSV. These are plain tables; the search feature is log search, above.
+- **Validation, backup and restore** — overlap and range checks in the forms, a syntax check against Kea's own binary, automatic pre-write backups, and restore from the UI.
+- **Kea 2.x and 3.x** — EZ-KEA detects the daemon's version and writes the control-socket syntax that version accepts (3.0 renamed `control-socket` to `control-sockets`), and reads either. Exercised against Kea 2.0.2 and 3.2.0 in the testbed.
+- **Multi-user auth** — local accounts, optional TOTP two-factor with recovery codes, and SMTP-backed password reset. Accounts are administrator or standard; admins additionally manage users, licensing and email settings. There is no read-only role — any account can change DHCP configuration.
+
+Full reference is in the [wiki](https://github.com/fenleytech/ez-kea/wiki).
+
 ## Security
 
 This edits your production DHCP config, so a few things matter:
 
-- Backs up your Kea configs before it writes
-- Checks syntax before applying
+- Backs up your Kea config before **every** write, and refuses to write if that backup fails
+- Checks syntax with Kea's own binary before applying, and aborts the apply on failure
 - Runs as whatever user you start it as, no root needed if your file perms allow it
 - Local accounts with optional TOTP two-factor, recovery codes, and SMTP password reset
 - Binds to 127.0.0.1 by default and refuses to bind elsewhere until you set SECRET_KEY
+- Makes no outbound network calls
 
 If you are putting it behind a reverse proxy or running Kea in Docker, see the [Security hardening](https://github.com/fenleytech/ez-kea/wiki/Security-Hardening) and [Installation](https://github.com/fenleytech/ez-kea/wiki/Installation) guides in the wiki.
 
-## Why EZ-KEA vs Stork
+## EZ-KEA and Stork
 
-ISC Stork is a great tool if you are managing a fleet of Kea and BIND servers. It gives you central monitoring, HA status, pool utilization, and integrates with Postgres and Grafana. If you have many servers, Stork might be best for you.
+ISC Stork is a good tool for managing a fleet of Kea and BIND servers — central monitoring, HA status, pool utilization, Postgres and Grafana integration. If that is your problem, use Stork.
 
-EZ-KEA is different. It is for the admin who has a few Kea servers and is tired of hand editing JSON files.
+EZ-KEA solves a different one. It is for the operator who already runs Kea, is happy with how it's deployed, and wants to stop editing its configuration by hand:
 
-- No agents, no database, no extra services
-- Finds your config automatically by looking at running processes
-- Edits the file Kea is actually running, with backup and syntax check
-- A simple interface you can hand to a junior admin or anyone who prefers not to live in a JSON file
+- No agents, no external database server, no extra services
+- Finds your config itself, from the running processes
+- Edits the file Kea is actually running, with automatic backups and a syntax check
+- An interface you can hand to someone who would rather not live in a JSON file
 
-If that sounds like you, try EZ-KEA. It is completely free for noncommercial use, homelabs, and personal learning. Commercial use is $500 a year per deployment, and you can get a free 30 day eval to try it at work first.
-
-## Features
-
-- **Auto-discovery** finds running Kea daemons and uses their live config files. No paths to set up, but you can override them in the UI if you want.
-- **IPv4 and IPv6** for shared networks, standalone subnets, pools, prefix delegation, and per-subnet options.
-- **Reservations** MAC based for v4, DUID based for v6 with address and or prefix.
-- **High availability** to set up Kea's `libdhcp_ha.so` hook with hot-standby, load-balancing, passive-backup and watch peer status live from the control socket.
-- **Safe edits** that backup, restore, syntax check, and apply from the UI, then reload however your install expects — `keactrl`, the daemon's own control socket, or a SIGHUP for Docker setups.
-- **Kea 2.x and 3.x** both work. EZ-KEA checks the version of the daemon it found and writes the matching control-socket syntax, so a config it generates is accepted by either.
-- **Leases and logs** with active v4 and v6 lease tables and a searchable log viewer.
-- **Multi-user auth** where admin accounts can manage users, licensing, and email settings.
-
-Screenshots of the [leases](docs/images/leases.png), [reservations](docs/images/reservations.png), [IPv6 pools](docs/images/pools6.png), and [log viewer](docs/images/logs.png) views. Full feature list is in the [wiki](https://github.com/fenleytech/ez-kea/wiki).
+Free and unlimited for noncommercial use. Commercial use is $500 a year per deployment, with a free 30-day eval to try it at work first.
 
 ## Running it for real
 
@@ -185,14 +219,14 @@ Tagged releases are on the [Releases page](https://github.com/fenleytech/ez-kea/
 
 ## Development
 
-Tests run with no Kea install and no network:
+**381 unit and route tests**, running with no Kea install and no network access:
 
 ```bash
 pip install -r requirements.txt
 python -m pytest
 ```
 
-There is also a containerized Kea testbed that boots a real DHCP server on two virtual VLANs and runs actual DHCP transactions — see [testbed/README.md](testbed/README.md):
+Beyond that there is a containerized testbed that boots a **real** Kea server on simulated VLAN interfaces and drives **actual** DHCP transactions through it, so leases and logs under test are real rather than fixtures. It runs against Kea 2.0.2 by default and Kea 3.2.0 with `KEA_DOCKERFILE=Dockerfile.kea-3.2` — which is how the 3.x packaging differences (no `keactrl`, the logger output path, the socket directory mode) were found rather than assumed. See [testbed/README.md](testbed/README.md):
 
 ```bash
 cd testbed && bash test_suite.sh

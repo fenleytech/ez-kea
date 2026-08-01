@@ -102,9 +102,10 @@ RESERVATIONS4 = {
 }
 
 # ── IPv6 plan ───────────────────────────────────────────────────────────────
-# All v6 subnets live inside shared networks on purpose: the Pools (IPv6) view
-# only renders shared-network subnets, so a standalone subnet6 would be written
-# to disk but never shown in the UI.
+# All v6 subnets live inside shared networks. This was originally a workaround
+# -- the Pools (IPv6) view used to render only shared-network subnets, so a
+# standalone subnet6 was written to disk but never shown. That gap was closed
+# in 0.9.1 (b841c32), so it is now just a shape choice for the demo data.
 #
 # 2001:db8::/32 is the RFC 3849 documentation prefix — correct for a demo and
 # unroutable on the public internet.
