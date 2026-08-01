@@ -1,4 +1,4 @@
-# EZ-Kea Pre-Launch Audit — Findings
+# EZ-KEA Pre-Launch Audit — Findings
 
 **Date:** 2026-07-08
 **Scope:** Full source review + live black-box/white-box testing against two running instances (a DEMO-mode sandbox and a LIVE instance wired to a real `kea-dhcp4` in the Docker testbed under `testbed/`), plus real DHCP protocol testing against simulated VLAN clients.
@@ -89,7 +89,7 @@ support, and DHCPv6 — have since been implemented.
 > 2026-07-08**, before any fixes. They are retained unedited as the historical
 > record. For current status, see [Remediation status](#remediation-status) above.
 
-EZ-Kea's core DHCPv4 CRUD (subnets, pools, options, timers) is solid, but the app **cannot safely be exposed to any untrusted network today**, has a crash bug in its main page triggered by following the UI's own default recommendation, and has a silent data-loss bug that breaks MAC reservations for the more common of its two subnet types. None of this is hard to fix, but none of it should ship as-is either. Priority order:
+EZ-KEA's core DHCPv4 CRUD (subnets, pools, options, timers) is solid, but the app **cannot safely be exposed to any untrusted network today**, has a crash bug in its main page triggered by following the UI's own default recommendation, and has a silent data-loss bug that breaks MAC reservations for the more common of its two subnet types. None of this is hard to fix, but none of it should ship as-is either. Priority order:
 
 1. Fix the `/pools` crash (`templates/pools.html:144`) — one-line fix, breaks the main page today.
 2. Fix the standalone-subnet blind spot in `has_overlap()`, `return_available_ips()`, and `new_reservation()` (`ez_kea/core/validation.py`, `ez_kea/routes/dhcp4.py`) — silently drops reservations and lets duplicate/overlapping standalone subnets through.
@@ -167,7 +167,7 @@ No startup check forces an operator to override this in production. Undermines a
 **File:** `ez_kea/core/config_manager.py:151-177`.
 **Confirmed by:** security-auditor, mechanically exercised live.
 
-Restore selects the file with the largest trailing timestamp among **any** file containing `.bak.` in `backup_dir` — no check that the backup's filename corresponds to the *current* `config_file`. Since `dhcp_config_file` is fully attacker-settable (1.3) while `backup_dir` is fixed, an attacker (or just an operator who's pointed EZ-Kea at more than one config file over its lifetime — e.g. switching DEMO/LIVE) can get `/restore-config` to silently overwrite the active config with content that was backed up for a completely different file.
+Restore selects the file with the largest trailing timestamp among **any** file containing `.bak.` in `backup_dir` — no check that the backup's filename corresponds to the *current* `config_file`. Since `dhcp_config_file` is fully attacker-settable (1.3) while `backup_dir` is fixed, an attacker (or just an operator who's pointed EZ-KEA at more than one config file over its lifetime — e.g. switching DEMO/LIVE) can get `/restore-config` to silently overwrite the active config with content that was backed up for a completely different file.
 
 **Fix direction:** name backups by a hash/exact match of the full config path, and filter restore candidates to only those matching `config_file` before comparing timestamps.
 
@@ -231,18 +231,18 @@ All of `new_reservation()`, `return_available_ips()`, `has_overlap()`, and `dele
 **File:** `ez_kea/routes/system.py:35-64`.
 **Found by:** network-engineer, fully characterized against the real testbed.
 
-`testbed/README.md` documents setting `KEA_DHCP4_CMD`/`KEA_CTRL_CMD` to `docker exec kea-testbed-kea-1 kea-dhcp4`/`keactrl` for a Docker deployment. But EZ-Kea builds the syntax-check/reload command using the **host** path of `DHCP_CONFIG_FILE`, while `docker exec` runs `kea-dhcp4` inside the **container's own filesystem namespace**, where that host path doesn't exist (the volume mount only exposes it at `/etc/kea/kea-dhcp4.conf` inside the container). This is a 100%-reproducible failure, unrelated to whether the JSON is valid:
+`testbed/README.md` documents setting `KEA_DHCP4_CMD`/`KEA_CTRL_CMD` to `docker exec kea-testbed-kea-1 kea-dhcp4`/`keactrl` for a Docker deployment. But EZ-KEA builds the syntax-check/reload command using the **host** path of `DHCP_CONFIG_FILE`, while `docker exec` runs `kea-dhcp4` inside the **container's own filesystem namespace**, where that host path doesn't exist (the volume mount only exposes it at `/etc/kea/kea-dhcp4.conf` inside the container). This is a 100%-reproducible failure, unrelated to whether the JSON is valid:
 ```
 $ curl -s -X POST http://localhost:8081/test-config
 {"error":"...Unable to open file /home/kaleb/dev/ez-kea/testbed/data/etc/kea/kea-dhcp4.conf"}
 ```
-`/apply-config` calls `test_config()` first and returns immediately on failure, so `KEA_CTRL_CMD reload` is **never even reached**. Even if that were fixed, `keactrl reload` independently fails in this container because `/etc/kea/keactrl.conf` isn't mounted (exactly as `testbed/README.md`'s own footnote warns) — two independent blockers, both must be fixed. The only mechanism that actually reloads Kea here is `docker kill -s HUP kea-testbed-kea-1`, which EZ-Kea's code has no path to trigger.
+`/apply-config` calls `test_config()` first and returns immediately on failure, so `KEA_CTRL_CMD reload` is **never even reached**. Even if that were fixed, `keactrl reload` independently fails in this container because `/etc/kea/keactrl.conf` isn't mounted (exactly as `testbed/README.md`'s own footnote warns) — two independent blockers, both must be fixed. The only mechanism that actually reloads Kea here is `docker kill -s HUP kea-testbed-kea-1`, which EZ-KEA's code has no path to trigger.
 
-**Verdict:** a genuine deployment-model bug, not a testbed misconfiguration — EZ-Kea has no concept that "the command I shell out to may run in a different filesystem namespace than the config file I manage." Following the product's own Docker instructions produces an instance where the single most important action ("Apply Changes") can never succeed.
+**Verdict:** a genuine deployment-model bug, not a testbed misconfiguration — EZ-KEA has no concept that "the command I shell out to may run in a different filesystem namespace than the config file I manage." Following the product's own Docker instructions produces an instance where the single most important action ("Apply Changes") can never succeed.
 
-**A related, same-root-cause bug:** `save_global_settings()` always writes a guessed Docker-style logger path (`/var/log/kea/kea-dhcp4.log`) into the Kea config. Inside the container, that directory doesn't exist, so Kea's **own** logging silently dies (`docker logs` goes permanently quiet the moment this is set) — and EZ-Kea's `/logs` viewer tries to open that same path on the **host**, where it also doesn't exist, so it shows "No log entries found" forever, regardless of real traffic. This blinds both the product's log viewer and the operator's fallback simultaneously.
+**A related, same-root-cause bug:** `save_global_settings()` always writes a guessed Docker-style logger path (`/var/log/kea/kea-dhcp4.log`) into the Kea config. Inside the container, that directory doesn't exist, so Kea's **own** logging silently dies (`docker logs` goes permanently quiet the moment this is set) — and EZ-KEA's `/logs` viewer tries to open that same path on the **host**, where it also doesn't exist, so it shows "No log entries found" forever, regardless of real traffic. This blinds both the product's log viewer and the operator's fallback simultaneously.
 
-**Fix direction:** either require host-path==container-path bind mounts (validate at startup) or add an explicit "in-container path" setting distinct from "path EZ-Kea reads/writes," and use the latter only for exec'd commands. Handle the missing-`keactrl.conf` case explicitly, offering a "container SIGHUP" reload mode as first-class supported behavior.
+**Fix direction:** either require host-path==container-path bind mounts (validate at startup) or add an explicit "in-container path" setting distinct from "path EZ-KEA reads/writes," and use the latter only for exec'd commands. Handle the missing-`keactrl.conf` case explicitly, offering a "container SIGHUP" reload mode as first-class supported behavior.
 
 ### 2.4 [HIGH — crash] `/mac-reservations` 500s on any reservation with a malformed `ip-address`
 **File:** `ez_kea/routes/dhcp4.py:177`.
@@ -288,7 +288,7 @@ HTTP method enforcement (405 on wrong verb), Content-Type handling (multipart vs
 
 **Baseline `testbed/test_suite.sh` run (empty config):** 4 passed / 4 failed — expected for an empty config; also surfaced that the base Kea container starts with **no `interfaces-config` at all**, so it can't answer any DHCP traffic until an operator explicitly configures interfaces. `testbed/README.md` doesn't call this out, so a new user following its own instructions will find every test client fails until they separately discover this requirement.
 
-**After building a real config entirely through the EZ-Kea UI** (subnet, pool, reservation, options) and manually reloading via `docker kill -s HUP kea-testbed-kea-1` (the only working reload mechanism — see 2.3): 6 passed / 3 failed, with all 3 residual failures attributable to no vlan20 subnet being configured (out of this audit's scope, not a new defect).
+**After building a real config entirely through the EZ-KEA UI** (subnet, pool, reservation, options) and manually reloading via `docker kill -s HUP kea-testbed-kea-1` (the only working reload mechanism — see 2.3): 6 passed / 3 failed, with all 3 residual failures attributable to no vlan20 subnet being configured (out of this audit's scope, not a new defect).
 
 **Scenario results, driven end-to-end through the live UI and verified against real DHCP behavior:**
 
@@ -301,7 +301,7 @@ HTTP method enforcement (405 on wrong verb), Content-Type handling (multipart vs
 | Unknown-subnet client (vlan99, no Kea subnet configured) gets no lease | PASS |
 | Router + DNS option delivery, verified in real DHCP ACK | PASS |
 
-Everything that successfully reached a running Kea config behaved with 100% fidelity to what the UI reported — the gaps are entirely in getting changes to actually reload (2.3) and in the standalone-subnet blind spot (2.2), not in Kea misinterpreting anything EZ-Kea wrote.
+Everything that successfully reached a running Kea config behaved with 100% fidelity to what the UI reported — the gaps are entirely in getting changes to actually reload (2.3) and in the standalone-subnet blind spot (2.2), not in Kea misinterpreting anything EZ-KEA wrote.
 
 ---
 
@@ -358,7 +358,7 @@ The Pools (v4) empty state is genuinely good (clear CTAs, one primary + one adva
 *(Source-level analysis, not a live-app test — see full reasoning per item in the original agent report if deeper rationale is needed later.)*
 
 ### 5.1 Verified gap beyond the assumed baseline: DHCPv6 is not real feature parity
-There is no `DHCP6_CONFIG_FILE` config entry at all — every v6 route falls back to a hardcoded `./demo/kea-dhcp6.conf` if nothing else is set, which is always, since nothing else ever sets it. Auto-discovery (`discovery.py`) only ever scans for `kea-dhcp4`. No UI field exists to point EZ-Kea at a real v6 config on a live dual-stack box. No reservations, no options, no backup/restore, no syntax-test-before-reload for v6 at all — a broken v6 JSON can be pushed live with zero validation. (Corroborates UI finding 4.2.)
+There is no `DHCP6_CONFIG_FILE` config entry at all — every v6 route falls back to a hardcoded `./demo/kea-dhcp6.conf` if nothing else is set, which is always, since nothing else ever sets it. Auto-discovery (`discovery.py`) only ever scans for `kea-dhcp4`. No UI field exists to point EZ-KEA at a real v6 config on a live dual-stack box. No reservations, no options, no backup/restore, no syntax-test-before-reload for v6 at all — a broken v6 JSON can be pushed live with zero validation. (Corroborates UI finding 4.2.)
 
 ### 5.2 MUST-HAVE before selling
 1. **Authentication** — no login/session gate anywhere (see 1.5).
@@ -375,7 +375,7 @@ There is no `DHCP6_CONFIG_FILE` config entry at all — every v6 route falls bac
 ### 5.3 Strongly recommended (competitiveness/retention)
 1. **Config versioning with diff/rollback** beyond the current single-slot restore — backups already accumulate silently on disk with no list/diff UI; this is a cheap win since the data already exists.
 2. **A real token-authenticated HTTP API** — every mutation today is an HTML form POST; no scriptable surface for automation/Terraform/CI exists beyond the read-only `/api/system/discover`.
-3. **Multi-server/multi-site management** — the entire model is one Kea process, one config path; any customer with more than one Kea instance needs N separate EZ-Kea deployments with no shared view.
+3. **Multi-server/multi-site management** — the entire model is one Kea process, one config path; any customer with more than one Kea instance needs N separate EZ-KEA deployments with no shared view.
 4. **HA/failover config support** — zero references to Kea's HA hook library anywhere.
 5. **DDNS integration** — zero references to `ddns` anywhere; competitors treat DNS+DHCP+IPAM as one story.
 6. **Client classes** — no support for VoIP/PXE/vendor-specific client classing.
@@ -399,7 +399,7 @@ The single-instance, single-Kea-process architecture (`Config.DHCP_CONFIG_FILE` 
 - **DEMO instance:** `http://localhost:8080`, isolated fixture data under a scratch directory (not the repo's real `./data/`, which was backed up before testing and left untouched).
 - **LIVE instance:** `http://localhost:8081`, wired to `testbed/data/etc/kea/kea-dhcp4.conf`, with `KEA_DHCP4_CMD`/`KEA_CTRL_CMD` pointed at `docker exec kea-testbed-kea-1 ...`.
 - **Testbed:** `testbed/docker-compose.yml`, brought up via `docker compose up -d --build` — real `kea-dhcp4` plus six simulated VLAN clients across three Docker networks.
-- One incidental discovery during setup, worth fixing regardless of the rest of this audit: **EZ-Kea's auto-discovery can be confused by a containerized `kea-dhcp4` process that happens to be visible via a shared host `/proc`** (common on hosts where Docker doesn't fully isolate PID namespaces from root) — it binds to the container-internal config path (`/etc/kea/kea-dhcp4.conf`), which doesn't exist on the host, silently breaking. Worked around for this audit via pre-seeded settings files; not separately numbered above since it wasn't reached through the normal discovery flow a real deployment would use, but worth being aware of.
+- One incidental discovery during setup, worth fixing regardless of the rest of this audit: **EZ-KEA's auto-discovery can be confused by a containerized `kea-dhcp4` process that happens to be visible via a shared host `/proc`** (common on hosts where Docker doesn't fully isolate PID namespaces from root) — it binds to the container-internal config path (`/etc/kea/kea-dhcp4.conf`), which doesn't exist on the host, silently breaking. Worked around for this audit via pre-seeded settings files; not separately numbered above since it wasn't reached through the normal discovery flow a real deployment would use, but worth being aware of.
 - `.env.testbed`, which `start_testbed.sh` expects to source, **does not exist in the repo** — the documented one-command testbed startup path is broken out of the box; the environment for this audit was instead set up manually with explicit env vars.
 
 Both background app instances and the Docker testbed were left running at the end of this audit pending a decision on whether to keep them up for follow-up manual testing.
