@@ -45,6 +45,12 @@ are regression-tested in `tests/test_greenfield_regressions.py`.
   resolves against `/var/run/kea`; EZ-KEA passed it to `connect()` verbatim, so
   it looked in its own working directory. This mattered doubly because Kea 3.2
   ships no `keactrl`, leaving the control socket as the only reload path.
+- **The DHCPv6 Pools page shows standalone subnets.** Kea writes a plain
+  single-subnet v6 server as a top-level `Dhcp6.subnet6[]`, and the page read
+  only `shared-networks` — so such a server displayed as "No IPv6 Shared
+  Networks Configured", hiding live subnets and inviting the operator to
+  recreate config that already existed. Standalone v6 subnets can now be
+  listed, created, deleted, and given options, matching DHCPv4.
 - **An unreadable Kea config now explains itself instead of returning a 500.**
   `load_json()` handled missing and corrupt files but not `PermissionError`,
   which is the *normal* first-run state against packaged Kea (`/etc/kea` is 0750

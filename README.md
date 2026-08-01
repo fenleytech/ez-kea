@@ -129,7 +129,7 @@ If that sounds like you, try EZ-KEA. It is completely free for noncommercial use
 ## Features
 
 - **Auto-discovery** finds running Kea daemons and uses their live config files. No paths to set up, but you can override them in the UI if you want.
-- **IPv4 and IPv6** for shared networks, standalone subnets, pools, prefix delegation, and per-subnet options. One IPv6 gap: the DHCPv6 Pools page lists subnets grouped under shared networks only, so a standalone `subnet6` won't appear there — it is left untouched in your config and still selectable for reservations and options.
+- **IPv4 and IPv6** for shared networks, standalone subnets, pools, prefix delegation, and per-subnet options.
 - **Reservations** MAC based for v4, DUID based for v6 with address and or prefix.
 - **High availability** to set up Kea's `libdhcp_ha.so` hook with hot-standby, load-balancing, passive-backup and watch peer status live from the control socket.
 - **Safe edits** that backup, restore, syntax check, and apply from the UI, then reload however your install expects — `keactrl`, the daemon's own control socket, or a SIGHUP for Docker setups.
