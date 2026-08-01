@@ -10,6 +10,8 @@ reads and always backs it up first.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-07-31
+
 ### Fixed
 
 Found by deploying from scratch onto a clean Ubuntu 24.04 box running ISC's own
@@ -124,5 +126,6 @@ version on it so an install can be identified.
   note and nothing more.
 - Branding standardized on EZ-KEA.
 
-[Unreleased]: https://github.com/fenleytech/ez-kea/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/fenleytech/ez-kea/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/fenleytech/ez-kea/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fenleytech/ez-kea/releases/tag/v0.9.0
