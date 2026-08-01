@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration Problem - EZ-KEA{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i data-lucide="alert-triangle"></i> EZ-KEA cannot use this Kea configuration</h1>
+</div>
+
+<div class="card" style="max-width: 60rem;">
+  <div class="card-body">
+    <p style="font-size: 1.05rem; line-height: 1.6;">{{ message }}</p>
+    <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--border);">
+    <p style="color: var(--text-secondary); font-size: 0.95rem;">
+      Nothing was changed. Your Kea configuration and the running daemon are untouched.
+      See the
+      <a href="https://github.com/fenleytech/ez-kea/wiki/Installation">Installation guide</a>
+      for the file permissions EZ-KEA needs.
+    </p>
+    <a href="{{ url_for('main.system.index') }}" class="btn btn-outline">
+      <i data-lucide="arrow-left"></i> Back to Home
+    </a>
+  </div>
+</div>
+{% endblock %}

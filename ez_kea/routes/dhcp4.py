@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union, Tuple
 from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app
 from werkzeug.wrappers import Response
-from ..core.config_manager import load_json, save_json, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_ipv4_address, has_overlap, return_available_ips, get_active_leases, sanitize_hostname
 
 dhcp4_bp = Blueprint('dhcp4', __name__)
@@ -61,7 +61,7 @@ def new_shared_network() -> Union[str, Response]:
             
             if not errors:
                 config["Dhcp4"]["shared-networks"].append({"name": shared_network_name, "subnet4": []})
-                save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+                save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
                 return redirect(url_for('main.dhcp4.pools'))
                 
     return render_template("new_shared_network.html", errors=errors)
@@ -78,7 +78,7 @@ def delete_shared_network() -> Response:
         config["Dhcp4"]["shared-networks"] = [
             net for net in config["Dhcp4"]["shared-networks"] if net.get("name") != shared_network_name
         ]
-        save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+        save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         
     return redirect(url_for('main.dhcp4.pools'))
 
@@ -153,7 +153,7 @@ def new_subnet() -> Union[str, Response, Tuple[str, int]]:
             # Add as standalone subnet directly under Dhcp4
             config.setdefault("Dhcp4", {}).setdefault("subnet4", []).append(new_subnet_obj)
 
-        save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+        save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.dhcp4.pools"))
 
 @dhcp4_bp.route("/delete-subnet", methods=["POST"])
@@ -175,7 +175,7 @@ def delete_subnet() -> Response:
         dhcp4 = config.get("Dhcp4", {})
         dhcp4["subnet4"] = [s for s in dhcp4.get("subnet4", []) if s.get("subnet") != subnet]
 
-    save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp4.pools"))
 
 
@@ -273,7 +273,7 @@ def new_reservation() -> Union[str, Response, Tuple[str, int]]:
             "ip-address": ip_address
         })
 
-        save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+        save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.dhcp4.mac_reservations"))
 
     return render_template("new_reservation.html", subnet_data=subnet_data, errors=errors)
@@ -308,7 +308,7 @@ def delete_reservation() -> Response:
                         ]
                 break
 
-    save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp4.mac_reservations"))
 
 @dhcp4_bp.route("/leases")

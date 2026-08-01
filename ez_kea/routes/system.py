@@ -18,7 +18,7 @@ from flask import (
 )
 from werkzeug.wrappers import Response
 from ..core.config_manager import (
-    load_json, save_json, copy_file, extract_log_file_from_config,
+    load_json, save_json, save_kea_config, copy_file, extract_log_file_from_config,
     with_config_lock, config_lock, bootstrap_config, bootstrap_config6, _DEFAULT_KEA6_CONFIG,
 )
 from ..core.settings_manager import load_settings, save_settings
@@ -809,9 +809,19 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
                 dhcp.pop(timer, None)
 
     if "host-reservation-identifiers" in request.form:
-        dhcp["host-reservation-identifiers"] = [
+        identifiers = [
             i.strip() for i in request.form["host-reservation-identifiers"].split(",") if i.strip()
         ]
+        if identifiers:
+            dhcp["host-reservation-identifiers"] = identifiers
+        else:
+            # Kea rejects an empty list outright ("syntax error, unexpected ]"),
+            # so "none set" has to be represented by the key being absent. This
+            # field is submitted as a hidden input on the second settings form,
+            # so it arrives empty on saves that have nothing to do with it --
+            # writing [] here used to make one Save click leave the live config
+            # unloadable.
+            dhcp.pop("host-reservation-identifiers", None)
 
     # DHCPv6-only: server-id (Dhcp6.server-id). Only touched when the field
     # is present and non-blank — leaving it blank means "let Kea auto-generate
@@ -851,6 +861,24 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
     # ez-kea-settings.json. Start from the full merged settings so this
     # version's save never clobbers the other version's persisted fields.
     new_settings = dict(load_settings(current_app.config["SETTINGS_FILE"]))
+    # ...but on the FIRST save there is no settings file yet, so load_settings()
+    # hands back _DEFAULTS, whose paths are the ./data sandbox. Persisting those
+    # for the version we are *not* saving silently demoted it: writing the file
+    # makes discover_environment*() take its "operator took control" branch, so
+    # a live daemon that auto-discovery had correctly found would never be
+    # looked for again, and every later edit went to a sandbox file the running
+    # Kea does not read. Seed the other version from what the app actually
+    # resolved at startup instead of from the defaults.
+    _other = "dhcp6" if prefix == "dhcp" else "dhcp"
+    _other_live = {
+        f"{_other}_config_file": "DHCP6_CONFIG_FILE" if _other == "dhcp6" else "DHCP_CONFIG_FILE",
+        f"{_other}_leases_file": "DHCP6_LEASES_FILE" if _other == "dhcp6" else "DHCP_LEASES_FILE",
+        f"{_other}_log_file": "DHCP6_LOG_FILE" if _other == "dhcp6" else "DHCP_LOG_FILE",
+    }
+    for settings_key, config_key in _other_live.items():
+        resolved = current_app.config.get(config_key)
+        if resolved:
+            new_settings[settings_key] = resolved
     new_settings[names["cmd_settings_key"]] = candidate_dhcp_cmd
     new_settings["kea_ctrl_cmd"] = candidate_ctrl_cmd
     new_settings[f"{prefix}_config_file"] = current_config_file
@@ -893,7 +921,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
         for logger in loggers:
             if logger.get("name") == daemon["logger_name"]:
                 found_logger = True
-                opts = logger.setdefault("output_options", [{"output": log_file_path}])
+                opts = logger.setdefault("output-options", [{"output": log_file_path}])
                 if opts:
                     opts[0]["output"] = log_file_path
                 else:
@@ -904,7 +932,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
                 "name": daemon["logger_name"],
                 "severity": "INFO",
                 "debuglevel": 0,
-                "output_options": [{"output": log_file_path}]
+                "output-options": [{"output": log_file_path}]
             })
     else:
         container = _docker_container_hint()
@@ -928,7 +956,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
     current_app.config["KEA_RELOAD_STRATEGY"] = new_settings["kea_reload_strategy"]
     current_app.config["KEA_DOCKER_CONTAINER"] = new_settings["kea_docker_container"]
 
-    save_json(config, current_config_file)
+    save_kea_config(config, current_config_file, current_app.config["BACKUP_DIR"])
     return redirect(url_for(redirect_endpoint, **redirect_kwargs))
 
 @system_bp.route("/save-global-settings", methods=["POST"])

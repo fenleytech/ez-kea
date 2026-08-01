@@ -11,6 +11,30 @@ import threading
 from contextlib import contextmanager
 from functools import wraps
 
+
+class ConfigAccessError(Exception):
+    """
+    Raised when a Kea config file exists but EZ-KEA cannot read or write it.
+
+    Deliberately NOT folded into the "return the skeleton" fallback used for a
+    missing or corrupt file. A permission error means a real config is sitting
+    there that we simply cannot see -- handing the caller an empty skeleton
+    would render the UI as though the server had no subnets at all, and the
+    operator's first edit would then overwrite their real config with that
+    skeleton. Failing loudly is the only safe option.
+    """
+
+
+class BackupError(Exception):
+    """
+    Raised when the pre-write backup of a Kea config could not be taken.
+
+    Callers must treat this as fatal to the write. EZ-KEA's headline promise is
+    that it backs up before it writes; silently writing anyway when the backup
+    failed would break exactly the guarantee an operator is relying on.
+    """
+
+
 # Minimal valid Kea DHCPv4 skeleton written on first run.
 #
 # `control-sockets` (list) is the Kea 3.0+ spelling of what used to be a single
@@ -130,6 +154,17 @@ def load_json(file_path: str, default: Optional[Dict[str, Any]] = None) -> Dict[
         return dict(fallback)
     except FileNotFoundError:
         return dict(fallback)
+    except PermissionError as e:
+        # A real config we're not allowed to read -- never fall back to the
+        # skeleton here (see ConfigAccessError). Standard Kea packages install
+        # /etc/kea 0750 _kea:_kea, so this is the normal outcome until the
+        # EZ-KEA service account is added to Kea's group.
+        raise ConfigAccessError(
+            f"EZ-KEA cannot read '{file_path}': {e.strerror}. The account "
+            "EZ-KEA runs as needs read and write access to this file — on a "
+            "packaged Kea install, add that account to Kea's group "
+            "(usually '_kea' or 'kea') and make the file group-writable."
+        ) from e
 
 
 def save_json(data: Dict[str, Any], file_path: str) -> None:
@@ -300,6 +335,64 @@ def bootstrap_config6(config_file: str, backup_dir: str, legacy_control_socket: 
     )
 
 
+def prune_backups(config_file: str, backup_dir: str, keep: int) -> None:
+    """
+    Delete all but the `keep` most recent backups of `config_file`.
+
+    Every config write now takes a backup (see save_kea_config), so without a
+    cap a busy install would grow one file per edit forever. Scoped by the same
+    identity fingerprint used elsewhere, so pruning one config's history never
+    touches another's. `keep` <= 0 disables pruning entirely.
+    """
+    if keep <= 0:
+        return
+
+    prefix = f"{os.path.basename(config_file)}.{_config_identity(config_file)}.bak."
+    try:
+        stamped = sorted(
+            (f for f in os.listdir(backup_dir) if f.startswith(prefix)),
+            reverse=True,  # names end in YYYYmmddHHMMSS, so lexical == chronological
+        )
+    except OSError:
+        return
+
+    for stale in stamped[keep:]:
+        try:
+            os.remove(os.path.join(backup_dir, stale))
+        except OSError:
+            pass  # a backup we couldn't delete is not worth failing a config write over
+
+
+def save_kea_config(
+    data: Dict[str, Any], file_path: str, backup_dir: str, keep_backups: int = 100
+) -> None:
+    """
+    Write a Kea config file, backing up the previous contents first.
+
+    This is the only function that should ever write a *Kea* config. Plain
+    save_json() does not back anything up, and using it directly for a config
+    EZ-KEA manages is what let "backs up your Kea configs before it writes"
+    quietly become untrue for every edit path except the explicit Backup button.
+
+    A failed backup aborts the write (BackupError) rather than proceeding
+    without one -- an operator relying on that guarantee during a bad edit is
+    exactly who gets hurt if we write anyway.
+    """
+    if os.path.isfile(file_path):
+        try:
+            copy_file(file_path, backup_dir)
+        except Exception as e:
+            raise BackupError(
+                f"Refusing to write '{file_path}': its pre-write backup into "
+                f"'{backup_dir}' failed ({e}). Fix the backup directory's path "
+                "or permissions and try again — EZ-KEA will not modify a Kea "
+                "config it cannot back up first."
+            ) from e
+        prune_backups(file_path, backup_dir, keep_backups)
+
+    save_json(data, file_path)
+
+
 def _config_identity(config_file: str) -> str:
     """
     Stable short identifier for a config file's full resolved path.
@@ -355,7 +448,15 @@ def copy_file(config_file: str, backup_dir: str, restore: bool = False) -> Union
 
         if most_recent_backup:
             try:
-                shutil.copy2(most_recent_backup, config_file)
+                # copyfile(), NOT copy2(): copy2 also copies the permission
+                # bits, and chmod() requires *ownership* of the destination.
+                # Every packaged Kea install leaves /etc/kea/kea-dhcp4.conf
+                # owned by _kea while EZ-KEA runs as its own account, so copy2
+                # raises EPERM *after* already writing the contents -- the
+                # restore silently succeeds while reporting a 500. We only ever
+                # want the file's contents replaced; its ownership and mode
+                # belong to whoever set up the Kea install.
+                shutil.copyfile(most_recent_backup, config_file)
                 print(f"Successfully restored configuration from {most_recent_backup}")
                 return True
             except Exception as e:

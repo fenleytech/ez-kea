@@ -5,7 +5,7 @@ from typing import Any, Dict, Union, Tuple
 from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
-from ..core.config_manager import load_json, save_json, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import validate_option_data
 from .dhcp6 import _find_subnet6
 
@@ -54,7 +54,7 @@ def manage_subnet4_options(shared_network_name: str, subnet: str) -> Union[str, 
              if not updated:
                   target_subnet["option-data"].append({"name": option_name, "data": option_data})
 
-             save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+             save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
 
         return redirect(url_for("main.options.manage_subnet4_options", shared_network_name=shared_network_name, subnet=subnet))
 
@@ -82,7 +82,7 @@ def delete_subnet4_option(shared_network_name: str, subnet: str) -> Response:
                      break
              break
              
-    save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.options.manage_subnet4_options", shared_network_name=shared_network_name, subnet=subnet))
 
 
@@ -119,7 +119,7 @@ def manage_standalone_subnet4_options(subnet: str) -> Union[str, Response, Tuple
                     break
             else:
                 opts.append({"name": option_name, "data": option_data})
-            save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+            save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.options.manage_standalone_subnet4_options", subnet=subnet))
 
     options = target_subnet.get("option-data", [])
@@ -142,7 +142,7 @@ def delete_standalone_subnet4_option(subnet: str) -> Response:
         if s.get("subnet") == subnet and "option-data" in s:
             s["option-data"] = [o for o in s["option-data"] if o.get("name") != option_name]
             break
-    save_json(config, current_app.config["DHCP_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.options.manage_standalone_subnet4_options", subnet=subnet))
 
 
@@ -180,7 +180,7 @@ def manage_subnet6_options(shared_network_name: str, subnet: str) -> Union[str, 
              if not updated:
                   target_subnet["option-data"].append({"name": option_name, "data": option_data})
 
-             save_json(config, current_app.config["DHCP6_CONFIG_FILE"])
+             save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
 
         return redirect(url_for("main.options.manage_subnet6_options", shared_network_name=shared_network_name, subnet=subnet))
 
@@ -203,7 +203,7 @@ def delete_subnet6_option(shared_network_name: str, subnet: str) -> Response:
     if target_subnet and found_network_name == shared_network_name and "option-data" in target_subnet:
         target_subnet["option-data"] = [opt for opt in target_subnet["option-data"] if opt.get("name") != option_name]
 
-    save_json(config, current_app.config["DHCP6_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.options.manage_subnet6_options", shared_network_name=shared_network_name, subnet=subnet))
 
 
@@ -235,7 +235,7 @@ def manage_standalone_subnet6_options(subnet: str) -> Union[str, Response, Tuple
                     break
             else:
                 opts.append({"name": option_name, "data": option_data})
-            save_json(config, current_app.config["DHCP6_CONFIG_FILE"])
+            save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.options.manage_standalone_subnet6_options", subnet=subnet))
 
     options = target_subnet.get("option-data", [])
@@ -259,5 +259,5 @@ def delete_standalone_subnet6_option(subnet: str) -> Response:
     if target_subnet and found_network_name is None and "option-data" in target_subnet:
         target_subnet["option-data"] = [o for o in target_subnet["option-data"] if o.get("name") != option_name]
 
-    save_json(config, current_app.config["DHCP6_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.options.manage_standalone_subnet6_options", subnet=subnet))

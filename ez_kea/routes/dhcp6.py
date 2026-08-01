@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union, Tuple
 from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app
 from werkzeug.wrappers import Response
-from ..core.config_manager import load_json, save_json, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_duid, has_overlap, return_available_ips, get_active_leases, get_active_leases6, unix_to_human_readable, sanitize_hostname
 import ipaddress
 
@@ -77,7 +77,7 @@ def new_shared_network6() -> Union[str, Response]:
             
             if not errors:
                 config["Dhcp6"]["shared-networks"].append({"name": shared_network_name, "subnet6": []})
-                save_json(config, config_file)
+                save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
                 return redirect(url_for('main.dhcp6.pools6'))
                 
     return render_template("new_shared_network6.html", errors=errors)
@@ -95,7 +95,7 @@ def delete_shared_network6() -> Response:
         config["Dhcp6"]["shared-networks"] = [
             net for net in config["Dhcp6"]["shared-networks"] if net.get("name") != shared_network_name
         ]
-        save_json(config, config_file)
+        save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
         
     return redirect(url_for('main.dhcp6.pools6'))
 
@@ -204,7 +204,7 @@ def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
         else:
             networks.append({"name": shared_network_name, "subnet6": [new_subnet_obj]})
 
-        save_json(config, config_file)
+        save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.dhcp6.pools6"))
 
 @dhcp6_bp.route("/delete-subnet6", methods=["POST"])
@@ -223,7 +223,7 @@ def delete_subnet6() -> Response:
                 network["subnet6"] = [sub for sub in network["subnet6"] if sub.get("subnet") != subnet]
             break
 
-    save_json(config, config_file)
+    save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp6.pools6"))
 
 
@@ -340,7 +340,7 @@ def new_reservation6() -> Union[str, Response, Tuple[str, int]]:
 
         subnet_obj.setdefault("reservations", []).append(new_reservation)
 
-        save_json(config, current_app.config["DHCP6_CONFIG_FILE"])
+        save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.dhcp6.reservations6"))
 
     return render_template("new_reservation6.html", available_subnets=available_subnets, errors=errors)
@@ -362,7 +362,7 @@ def delete_reservation6() -> Response:
                 res for res in subnet_obj["reservations"] if res.get("duid") != duid
             ]
 
-    save_json(config, current_app.config["DHCP6_CONFIG_FILE"])
+    save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp6.reservations6"))
 
 @dhcp6_bp.route("/leases6")

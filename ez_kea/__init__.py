@@ -120,6 +120,27 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
     from .auth import auth_bp
     app.register_blueprint(auth_bp)
 
+    # A Kea config that exists but cannot be read or backed up is an operator
+    # problem with a specific fix, not a crash. Without these, both surfaced as
+    # a bare HTTP 500 with the real reason visible only in the server log --
+    # which is precisely what a fresh install against a packaged Kea hits,
+    # since those ship /etc/kea 0750 _kea:_kea.
+    from .core.config_manager import BackupError, ConfigAccessError
+
+    @app.errorhandler(ConfigAccessError)
+    def _handle_config_access_error(e: ConfigAccessError):
+        from flask import jsonify as _jsonify, render_template, request as _request
+        if _request.path.startswith(("/apply-changes", "/test-config", "/backup-config", "/restore-config")):
+            return _jsonify({"error": str(e)}), 503
+        return render_template("error.html", message=str(e)), 503
+
+    @app.errorhandler(BackupError)
+    def _handle_backup_error(e: BackupError):
+        from flask import jsonify as _jsonify, render_template, request as _request
+        if _request.path.startswith(("/apply-changes", "/test-config", "/backup-config", "/restore-config")):
+            return _jsonify({"error": str(e)}), 503
+        return render_template("error.html", message=str(e)), 503
+
     @app.url_defaults
     def add_static_cache_buster(endpoint: str, values: dict) -> None:
         """

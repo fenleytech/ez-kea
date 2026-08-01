@@ -29,6 +29,12 @@ It is a shared sandbox with fake data and it resets every 30 minutes, so break w
 
 Requires **Python 3.10+**. Kea is optional — without it, EZ-KEA starts in demo mode. Kea **2.x and 3.x** are both supported, including 3.2, which dropped the Control Agent and ships no `keactrl`.
 
+On Debian and Ubuntu, `python3-venv` is a separate package and is **not** installed with Python, so install it first or `python3 -m venv` fails:
+
+```bash
+sudo apt install python3-venv        # Debian/Ubuntu only
+```
+
 ```bash
 git clone https://github.com/fenleytech/ez-kea.git
 cd ez-kea
@@ -47,6 +53,53 @@ export SECRET_KEY="$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
 export HOST=0.0.0.0
 python3 app.py
 ```
+
+## Pointing it at a real Kea
+
+If you already run Kea, EZ-KEA finds it — skip to the permissions note below.
+
+If you are starting from nothing, ISC publishes packages for current Kea; distro
+repos generally do not (Ubuntu 24.04 still ships 2.x). For Kea 3.2 on Ubuntu
+`noble`:
+
+```bash
+curl -1sLf https://dl.cloudsmith.io/public/isc/kea-3-2/gpg.key \
+  | sudo gpg --dearmor -o /usr/share/keyrings/isc-kea-3-2.gpg
+echo "deb [signed-by=/usr/share/keyrings/isc-kea-3-2.gpg] \
+https://dl.cloudsmith.io/public/isc/kea-3-2/deb/ubuntu noble main" \
+  | sudo tee /etc/apt/sources.list.d/isc-kea-3-2.list
+sudo apt update && sudo apt install isc-kea-dhcp4 isc-kea-dhcp6
+```
+
+Units are `isc-kea-dhcp4-server` / `isc-kea-dhcp6-server`, config lives in
+`/etc/kea/`, and the daemons run as `_kea`. See ISC's
+[installation docs](https://kea.readthedocs.io/) for other distributions and for
+building from the tarball.
+
+### Permissions EZ-KEA needs
+
+**This is the step people get stuck on.** ISC's packages lock everything down to
+`_kea:_kea` mode 0750/0640 — including the binaries — so an unprivileged EZ-KEA
+cannot read the config, run the syntax check, read leases or logs, or reach the
+control socket. Grant it access by putting EZ-KEA's account in Kea's group and
+making the configs group-writable:
+
+```bash
+sudo usermod -aG _kea $USER          # or: -aG _kea ezkea, for a service account
+sudo chmod g+w /etc/kea/kea-dhcp4.conf /etc/kea/kea-dhcp6.conf
+```
+
+Log back in (or restart the service) so the new group takes effect. On distros
+that call the account `kea` rather than `_kea`, use that instead.
+
+### Reloading Kea 3.x
+
+Kea 3.2 ships **no `keactrl`**, so EZ-KEA's default reload strategy cannot work
+there. In **Settings → Reload Strategy**, choose **Control socket
+(config-reload)** (`KEA_RELOAD_STRATEGY=control-socket`), which talks to the
+daemon's own socket and reports whether the reload actually succeeded. Make sure
+the daemon has a `control-socket` (or 3.0+ `control-sockets`) block — ISC's
+shipped config does.
 
 ## Security
 
@@ -76,7 +129,7 @@ If that sounds like you, try EZ-KEA. It is completely free for noncommercial use
 ## Features
 
 - **Auto-discovery** finds running Kea daemons and uses their live config files. No paths to set up, but you can override them in the UI if you want.
-- **IPv4 and IPv6** for shared networks, standalone subnets, pools, prefix delegation, and per-subnet options.
+- **IPv4 and IPv6** for shared networks, pools, prefix delegation, and per-subnet options. Standalone (non-shared-network) subnets are managed from the UI for IPv4; on IPv6 they are preserved untouched in your config, but subnets are created and listed under shared networks.
 - **Reservations** MAC based for v4, DUID based for v6 with address and or prefix.
 - **High availability** to set up Kea's `libdhcp_ha.so` hook with hot-standby, load-balancing, passive-backup and watch peer status live from the control socket.
 - **Safe edits** that backup, restore, syntax check, and apply from the UI, then reload however your install expects — `keactrl`, the daemon's own control socket, or a SIGHUP for Docker setups.

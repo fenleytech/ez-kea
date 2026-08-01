@@ -22,6 +22,7 @@ command is parameterless and is issued on the operator's explicit action --
 nothing here forwards user-supplied arguments to the daemon.
 """
 import json
+import os
 import socket
 from typing import Any, Dict
 
@@ -29,6 +30,13 @@ from typing import Any, Dict
 # how you reload a Kea 3.x installed from ISC's packages, which ship no
 # keactrl at all -- see the "control-socket" reload strategy in routes/system.py.
 ALLOWED_COMMANDS = {"ha-heartbeat", "status-get", "config-reload"}
+
+# Where Kea resolves a bare `socket-name` (one with no directory component).
+# ISC's own packaged kea-dhcp4.conf ships exactly that -- "kea4-ctrl-socket" --
+# and Kea 3.x will not accept a socket path outside this directory at all
+# ("invalid path specified: '/run/kea', supported path is '/var/run/kea'"), so
+# it is the one correct place to look rather than a guess.
+KEA_DEFAULT_SOCKET_DIR = "/var/run/kea"
 
 
 class ControlChannelError(Exception):
@@ -66,7 +74,16 @@ def find_unix_socket_path(config: Dict[str, Any], dhcp_key: str) -> str:
             continue
         name = entry.get("socket-name")
         if isinstance(name, str) and name:
-            return name
+            # A bare name is resolved by Kea against its own runtime directory,
+            # not against EZ-KEA's working directory. Passing it through
+            # verbatim made socket.connect() look for "kea4-ctrl-socket" in
+            # whatever cwd EZ-KEA happened to start in, so the control-socket
+            # reload strategy could never work against a stock packaged Kea --
+            # the one platform where it is the *only* strategy available,
+            # keactrl having been dropped.
+            if os.path.dirname(name):
+                return name
+            return os.path.join(KEA_DEFAULT_SOCKET_DIR, name)
 
     return ""
 

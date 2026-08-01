@@ -54,7 +54,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .config_manager import extract_log_file_from_config
+from .config_manager import ConfigAccessError, extract_log_file_from_config
 
 # ---------------------------------------------------------------------------
 # Tunables. Batch sizes bound how long the background writer holds the SQLite
@@ -994,10 +994,18 @@ def resolve_log_sources(config: Any) -> List[Tuple[str, str]]:
         if (config.get(in_container_key, "") or "").strip():
             path = log_file
         else:
-            path = extract_log_file_from_config(
-                config.get(config_key, "") or "", log_file,
-                dhcp_key=root_key, logger_name=logger_name,
-            )
+            try:
+                path = extract_log_file_from_config(
+                    config.get(config_key, "") or "", log_file,
+                    dhcp_key=root_key, logger_name=logger_name,
+                )
+            except ConfigAccessError:
+                # Kea's config is there but unreadable by this account. That is
+                # a real problem, but it is the *page* handlers' job to say so
+                # loudly -- this loop runs every LOG_INDEX_INTERVAL seconds, and
+                # letting it raise buried a full traceback in the log once a
+                # minute forever. Skip this daemon's logs and move on.
+                continue
         if path:
             sources.append((path, version))
     return sources

@@ -10,6 +10,56 @@ reads and always backs it up first.
 
 ## [Unreleased]
 
+### Fixed
+
+Found by deploying from scratch onto a clean Ubuntu 24.04 box running ISC's own
+Kea 3.2 packages — every one of these was reproduced on that machine, and all
+are regression-tested in `tests/test_greenfield_regressions.py`.
+
+- **Kea configs are now genuinely backed up before every write.** Automatic
+  backup did not exist: `copy_file()` was reachable only from the explicit
+  Backup and Restore buttons, while all 23 config-write paths (subnets, pools,
+  reservations, options, HA, global settings) called `save_json()` directly.
+  Writes now go through `save_kea_config()`, which backs up first, prunes to the
+  most recent 100 per config, and **refuses the write** if the backup fails.
+- **Restore no longer fails on a normal packaged Kea install.** It used
+  `shutil.copy2()`, which chmods the destination — and chmod needs *ownership*,
+  which EZ-KEA does not have over a `_kea`-owned `/etc/kea/kea-dhcp4.conf`. It
+  raised `EPERM` *after* writing the contents, so the restore silently succeeded
+  while reporting HTTP 500. Now uses `copyfile()`, leaving ownership and mode to
+  whoever set up Kea.
+- **Saving Global Settings no longer writes a config Kea refuses to load.** It
+  emitted `output_options` (underscore) alongside the correct `output-options`,
+  which Kea rejects as a duplicate, and injected an empty
+  `host-reservation-identifiers: []`, which Kea rejects outright. One Save click
+  left the live config unloadable.
+- **Saving Global Settings no longer silently demotes the other protocol to the
+  sandbox.** On the first save the settings file was seeded from the `./data`
+  defaults, so saving the DHCPv4 form pinned DHCPv6 to a sandbox path — and
+  writing the file makes discovery stop looking for the running daemon. Every
+  later DHCPv6 edit then went to a file `kea-dhcp6` never reads, with no warning.
+  The version not being saved is now seeded from what discovery actually
+  resolved.
+- **The control-socket reload strategy works against a stock ISC config.** Those
+  configs use a bare relative `socket-name` (`kea4-ctrl-socket`), which Kea
+  resolves against `/var/run/kea`; EZ-KEA passed it to `connect()` verbatim, so
+  it looked in its own working directory. This mattered doubly because Kea 3.2
+  ships no `keactrl`, leaving the control socket as the only reload path.
+- **An unreadable Kea config now explains itself instead of returning a 500.**
+  `load_json()` handled missing and corrupt files but not `PermissionError`,
+  which is the *normal* first-run state against packaged Kea (`/etc/kea` is 0750
+  `_kea:_kea`). It now raises `ConfigAccessError`, rendered as a 503 naming the
+  file and the group fix, and the log indexer no longer logs a traceback every
+  60 seconds. It deliberately does **not** fall back to the empty skeleton —
+  that would show a real server as having no subnets, and the next save would
+  overwrite the operator's config with it.
+
+### Removed
+
+- `jsonify==0.5` from `requirements.txt` — an abandoned no-op package unrelated
+  to Flask's `jsonify`, imported nowhere, with no wheel on PyPI, so it was built
+  from source during the first command every install runs.
+
 ### Changed
 
 - **Commercial licensing now states a price.** $500 a year for a single

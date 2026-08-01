@@ -8,7 +8,6 @@ Flask-SQLAlchemy
 Flask-WTF==1.2.1
 itsdangerous==2.2.0
 Jinja2==3.1.4
-jsonify==0.5
 MarkupSafe==2.1.5
 pillow
 pyotp

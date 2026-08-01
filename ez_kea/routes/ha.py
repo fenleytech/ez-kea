@@ -14,7 +14,7 @@ from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash, jsonify
 from werkzeug.wrappers import Response
 
-from ..core.config_manager import load_json, save_json, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.ha_manager import (
     find_ha_hook, get_ha_params, set_ha_config, remove_ha_config, parse_ha_form,
     DEFAULT_HA_LIBRARY_PATH,
@@ -46,7 +46,7 @@ def _save_ha(dhcp_key: str, config_file: str) -> Response:
     if request.form.get("ha-enabled") != "on":
         config = load_json(config_file)
         remove_ha_config(config, dhcp_key)
-        save_json(config, config_file)
+        save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
         flash(f"High Availability disabled for {dhcp_key}.", "info")
         return redirect(url_for("main.ha.high_availability"))
 
@@ -59,7 +59,7 @@ def _save_ha(dhcp_key: str, config_file: str) -> Response:
     library_path, ha_params = result
     config = load_json(config_file)
     set_ha_config(config, library_path, ha_params, dhcp_key)
-    save_json(config, config_file)
+    save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     flash(f"High Availability configuration saved for {dhcp_key}.", "success")
     return redirect(url_for("main.ha.high_availability"))
 
