@@ -50,8 +50,18 @@ def _next_subnet6_id(config: Dict[str, Any]) -> int:
 def pools6() -> str:
     """Render the main DHCPv6 pools configuration view."""
     config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
-    shared_networks = config.get("Dhcp6", {}).get("shared-networks", [])
-    return render_template("pools6.html", shared_networks=shared_networks)
+    dhcp6 = config.get("Dhcp6", {})
+    shared_networks = dhcp6.get("shared-networks", [])
+    # Top-level Dhcp6.subnet6[] -- subnets not inside any shared network. Kea
+    # writes these for a plain single-subnet setup (ISC's own example config
+    # does), so omitting them here rendered a perfectly normal server as
+    # "No IPv6 Shared Networks Configured" and hid live subnets completely.
+    standalone_subnets = dhcp6.get("subnet6", [])
+    return render_template(
+        "pools6.html",
+        shared_networks=shared_networks,
+        standalone_subnets=standalone_subnets,
+    )
 
 @dhcp6_bp.route("/new-shared-network6", methods=["GET", "POST"])
 @login_required
@@ -128,8 +138,11 @@ def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
             except ValueError:
                 errors.append("Invalid IPv6 subnet format. Please enter a valid network address (e.g., 2001:db8::/64).")
 
-        if not shared_network_name:
-            errors.append("Shared network name is required.")
+        # A blank shared-network-name is legitimate: it means a standalone
+        # subnet under Dhcp6.subnet6[], which is how Kea writes a plain
+        # single-subnet server. Requiring a group here was what forced every
+        # v6 subnet into a shared network and left standalone ones
+        # unrepresentable from the UI.
 
         if not errors:
             overlap = has_overlap(subnet, config, "Dhcp6")
@@ -191,18 +204,25 @@ def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
         if pd_pool:
             new_subnet_obj["pd-pools"] = [{"prefix": pd_pool, "delegated-len": pd_length_int}]
 
-        # Match an existing shared network by name, or auto-create one if it
-        # doesn't exist yet — mirrors the v4 behavior in new_subnet(), so a
-        # shared-network-name that doesn't match anything no longer silently
-        # drops the subnet.
         dhcp6 = config.setdefault("Dhcp6", {})
-        networks = dhcp6.setdefault("shared-networks", [])
-        for shared_network in networks:
-            if shared_network.get("name") == shared_network_name:
-                shared_network.setdefault("subnet6", []).append(new_subnet_obj)
-                break
+        if not shared_network_name:
+            # No group named: a standalone subnet under Dhcp6.subnet6[], same
+            # as the v4 path. Previously this fell through to the branch below
+            # and created a shared network literally named "", which is not
+            # something anyone asked for.
+            dhcp6.setdefault("subnet6", []).append(new_subnet_obj)
         else:
-            networks.append({"name": shared_network_name, "subnet6": [new_subnet_obj]})
+            # Match an existing shared network by name, or auto-create one if it
+            # doesn't exist yet — mirrors the v4 behavior in new_subnet(), so a
+            # shared-network-name that doesn't match anything no longer silently
+            # drops the subnet.
+            networks = dhcp6.setdefault("shared-networks", [])
+            for shared_network in networks:
+                if shared_network.get("name") == shared_network_name:
+                    shared_network.setdefault("subnet6", []).append(new_subnet_obj)
+                    break
+            else:
+                networks.append({"name": shared_network_name, "subnet6": [new_subnet_obj]})
 
         save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
         return redirect(url_for("main.dhcp6.pools6"))
@@ -217,11 +237,19 @@ def delete_subnet6() -> Response:
     config_file = current_app.config["DHCP6_CONFIG_FILE"]
     config = load_json(config_file)
 
-    for network in config.get("Dhcp6", {}).get("shared-networks", []):
-        if network.get("name") == shared_network_name:
-            if "subnet6" in network:
-                network["subnet6"] = [sub for sub in network["subnet6"] if sub.get("subnet") != subnet]
-            break
+    if not shared_network_name:
+        # Standalone subnet (Dhcp6.subnet6[]). Without this the delete button on
+        # a standalone subnet silently did nothing: the loop below only ever
+        # searched inside shared networks.
+        dhcp6 = config.get("Dhcp6", {})
+        if "subnet6" in dhcp6:
+            dhcp6["subnet6"] = [sub for sub in dhcp6["subnet6"] if sub.get("subnet") != subnet]
+    else:
+        for network in config.get("Dhcp6", {}).get("shared-networks", []):
+            if network.get("name") == shared_network_name:
+                if "subnet6" in network:
+                    network["subnet6"] = [sub for sub in network["subnet6"] if sub.get("subnet") != subnet]
+                break
 
     save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp6.pools6"))

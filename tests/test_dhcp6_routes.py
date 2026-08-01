@@ -98,13 +98,23 @@ def test_new_subnet6_auto_creates_missing_shared_network(mock_overlap, app):
     assert matching[0]["subnet6"][0]["subnet"] == "2001:db8:1::/64"
 
 @patch("ez_kea.routes.dhcp6.has_overlap")
-def test_new_subnet6_missing_shared_network_name_returns_form_error(mock_overlap, client):
-    """Regression test: an omitted
-    shared-network-name field used to silently drop the subnet too."""
+def test_new_subnet6_without_a_shared_network_name_is_kept_as_standalone(mock_overlap, app, client):
+    """
+    Regression test: an omitted shared-network-name used to silently drop the
+    subnet. It was then made a hard form error, which fixed the data loss but
+    left standalone subnets unrepresentable from the UI even though Kea (and
+    ISC's own example config) writes plain servers that way.
+
+    The subnet must survive either way -- now as a top-level Dhcp6.subnet6[].
+    """
     mock_overlap.return_value = False
     response = client.post("/new-subnet6", data={"subnet": "2001:db8:2::/64"})
-    assert response.status_code == 400
-    assert b"Shared network name is required" in response.data
+    assert response.status_code == 302
+
+    with open(app.config["DHCP6_CONFIG_FILE"]) as f:
+        dhcp6 = json.load(f)["Dhcp6"]
+    assert [s["subnet"] for s in dhcp6.get("subnet6", [])] == ["2001:db8:2::/64"]
+    assert not any(n.get("name") == "" for n in dhcp6.get("shared-networks", []))
 
 @patch("ez_kea.routes.dhcp6.has_overlap")
 def test_new_subnet6_pd_length_out_of_range_rejected(mock_overlap, client):
@@ -436,3 +446,91 @@ def test_manage_standalone_subnet6_options_rejects_shared_network_nested_subnet(
     client = login(app.test_client(), app)
     response = client.get("/options/subnet6/standalone/2001:db8:ff::/64")
     assert response.status_code == 404
+
+
+# ── Standalone (non-shared-network) subnet6 ──────────────────────────────────
+# Kea writes plain single-subnet setups as a top-level Dhcp6.subnet6[] -- ISC's
+# own example config does exactly that. The pools6 view used to read only
+# shared-networks, so a live server configured that way rendered as "No IPv6
+# Shared Networks Configured" and its subnets were invisible and unmanageable.
+
+def _write_v6_config(app, dhcp6):
+    with open(app.config["DHCP6_CONFIG_FILE"], "w") as f:
+        json.dump({"Dhcp6": dhcp6}, f)
+
+
+def _read_v6_config(app):
+    with open(app.config["DHCP6_CONFIG_FILE"]) as f:
+        return json.load(f)["Dhcp6"]
+
+
+def test_pools6_lists_standalone_subnets(app, client):
+    _write_v6_config(app, {
+        "shared-networks": [],
+        "subnet6": [{
+            "id": 1,
+            "subnet": "2001:db8:66:10::/64",
+            "pools": [{"pool": "2001:db8:66:10::100 - 2001:db8:66:10::200"}],
+            "pd-pools": [{"prefix": "2001:db8:66:2000::", "delegated-len": 64}],
+        }],
+    })
+
+    body = client.get("/pools6").get_data(as_text=True)
+
+    assert "2001:db8:66:10::/64" in body
+    assert "2001:db8:66:10::100 - 2001:db8:66:10::200" in body, "its address pool should show"
+    assert "2001:db8:66:2000::" in body, "its PD pool should show"
+    assert "No IPv6 Shared Networks Configured" not in body, \
+        "a server with a standalone subnet is not an empty server"
+
+
+def test_pools6_empty_state_only_when_truly_empty(app, client):
+    _write_v6_config(app, {"shared-networks": [], "subnet6": []})
+    assert "No IPv6 Shared Networks Configured" in client.get("/pools6").get_data(as_text=True)
+
+
+def test_new_subnet6_without_a_group_creates_a_standalone_subnet(app, client):
+    """A blank shared-network-name used to create a shared network named ""."""
+    _write_v6_config(app, {"shared-networks": []})
+
+    client.post("/new-subnet6", data={
+        "subnet": "2001:db8:99::/64",
+        "shared-network-name": "",
+        "pool-start": "2001:db8:99::10",
+        "pool-end": "2001:db8:99::20",
+    })
+
+    dhcp6 = _read_v6_config(app)
+    assert [s["subnet"] for s in dhcp6.get("subnet6", [])] == ["2001:db8:99::/64"]
+    assert not any(n.get("name") == "" for n in dhcp6.get("shared-networks", [])), \
+        "must not invent a shared network with an empty name"
+
+
+def test_delete_subnet6_removes_a_standalone_subnet(app, client):
+    """The delete button on a standalone subnet used to silently do nothing."""
+    _write_v6_config(app, {
+        "shared-networks": [],
+        "subnet6": [
+            {"id": 1, "subnet": "2001:db8:66:10::/64"},
+            {"id": 2, "subnet": "2001:db8:66:11::/64"},
+        ],
+    })
+
+    client.post("/delete-subnet6", data={"shared-network-name": "", "subnet": "2001:db8:66:10::/64"})
+
+    assert [s["subnet"] for s in _read_v6_config(app)["subnet6"]] == ["2001:db8:66:11::/64"]
+
+
+def test_deleting_a_grouped_subnet_leaves_standalone_ones_alone(app, client):
+    """The two code paths must not reach into each other."""
+    _write_v6_config(app, {
+        "shared-networks": [{"name": "vlan20", "subnet6": [{"id": 2, "subnet": "2001:db8:66:20::/64"}]}],
+        "subnet6": [{"id": 1, "subnet": "2001:db8:66:10::/64"}],
+    })
+
+    client.post("/delete-subnet6", data={"shared-network-name": "vlan20", "subnet": "2001:db8:66:20::/64"})
+
+    dhcp6 = _read_v6_config(app)
+    assert dhcp6["shared-networks"][0]["subnet6"] == []
+    assert [s["subnet"] for s in dhcp6["subnet6"]] == ["2001:db8:66:10::/64"], \
+        "the standalone subnet must be untouched"

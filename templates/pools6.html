@@ -5,19 +5,94 @@
 {% block content %}
 <div class="page-header">
     <h1><i data-lucide="globe"></i> DHCPv6 Pools Management</h1>
-    <div>
+    <div style="display:flex;gap:.5rem;">
+        <a href="{{ url_for('main.dhcp6.new_subnet6') }}" class="btn btn-outline">
+            <i data-lucide="plus-circle"></i> Add Standalone Subnet
+        </a>
         <a href="{{ url_for('main.dhcp6.new_shared_network6') }}" class="btn btn-primary" title="Group multiple subnets that share the same physical wire/VLAN.">
             <i data-lucide="plus"></i> New IPv6 Shared Network
         </a>
     </div>
 </div>
 <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: -1rem; margin-bottom: 2rem;">
-  <i data-lucide="info" style="width: 16px; height: 16px; display: inline-block; vertical-align: middle;"></i> 
-  <strong>Shared Networks</strong> group multiple IPv6 subnets together if they exist on the same physical link. Create a shared network group to start adding subnets.
+  <i data-lucide="info" style="width: 16px; height: 16px; display: inline-block; vertical-align: middle;"></i>
+  <strong>Standalone Subnets</strong> are standard networks mapped to a single interface.
+  <strong>Shared Networks</strong> group multiple IPv6 subnets together if they exist on the same physical link. If you are unsure, just add a Standalone Subnet.
 </p>
 
 {% set dhcp_version = "6" %}
 {% include 'config_buttons.html' %}
+
+{% if standalone_subnets %}
+<div class="card">
+    <div class="card-header">
+        <h2><i data-lucide="layout-grid"></i> Standalone Subnets</h2>
+        <a href="{{ url_for('main.dhcp6.new_subnet6') }}" class="btn btn-outline btn-sm">
+            <i data-lucide="plus-circle"></i> Add
+        </a>
+    </div>
+    <div class="card-body">
+        {% for subnet in standalone_subnets %}
+        <div class="card" style="background-color: rgba(0, 0, 0, 0.3); border-color: rgba(255, 255, 255, 0.05);">
+            <div class="card-header" style="background: transparent;">
+                <h3><i data-lucide="layout-grid"></i> Subnet: {{ subnet.subnet }}</h3>
+                <div style="display: flex; gap: 0.5rem;">
+                    <a href="{{ url_for('main.options.manage_standalone_subnet6_options', subnet=subnet.subnet) }}"
+                        class="btn btn-outline btn-sm" title="Manage Options">
+                        <i data-lucide="settings-2"></i> Manage Options
+                    </a>
+                    <form action="{{ url_for('main.dhcp6.delete_subnet6') }}" method="POST" class="d-inline"
+                        onsubmit="return confirm('Are you sure you want to delete this subnet?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="shared-network-name" value="">
+                        <input type="hidden" name="subnet" value="{{ subnet.subnet }}">
+                        <button type="submit" class="btn btn-danger btn-sm" title="Delete Subnet">
+                            <i data-lucide="trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    <div>
+                        <span class="form-label">Standard Address Pools (IA_NA)</span>
+                        {% if subnet.get('pools') %}
+                        {% for pool in subnet['pools'] %}
+                        <span class="badge badge-info"
+                            style="background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">
+                            {{ pool.pool }}
+                        </span>
+                        <br>
+                        {% endfor %}
+                        {% else %}
+                        <span class="badge"
+                            style="background-color: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);">No
+                            address pools configured</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <span class="form-label">Prefix Delegation Pools</span>
+                        {% if subnet.get('pd-pools') %}
+                        {% for pd in subnet['pd-pools'] %}
+                        <span class="badge badge-success"
+                            style="background-color: rgba(16, 185, 129, 0.1); color: var(--success-green); border-color: rgba(16, 185, 129, 0.2);">
+                            {{ pd.prefix }} (Delegated length: /{{ pd['delegated-len'] }})
+                        </span>
+                        <br>
+                        {% endfor %}
+                        {% else %}
+                        <span class="badge"
+                            style="background-color: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);">No
+                            PD Pools configured</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 {% for network in shared_networks %}
 <div class="card">
@@ -112,7 +187,7 @@
 </div>
 {% endfor %}
 
-{% if not shared_networks %}
+{% if not shared_networks and not standalone_subnets %}
 <div class="card">
     <div class="card-body" style="text-align: center; padding: 4rem 2rem;">
         <i data-lucide="globe"
