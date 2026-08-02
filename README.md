@@ -45,7 +45,7 @@ Network and infrastructure engineers, ISPs, MSPs, and anyone running Kea in prod
 
 It is a shared sandbox with fake data and it resets every 30 minutes, so break whatever you want.
 
-More screenshots: [log search](docs/images/logsearch.png) · [adding a subnet](docs/images/new-subnet.png) · [IPv6 pools and prefix delegation](docs/images/pools6.png) · [high availability](docs/images/ha.png) · [reservations](docs/images/reservations.png) · [leases](docs/images/leases.png)
+More screenshots: [live dashboard](docs/images/dashboard.png) · [log search](docs/images/logsearch.png) · [adding a subnet](docs/images/new-subnet.png) · [editing a subnet](docs/images/edit-subnet.png) · [IPv6 pools and prefix delegation](docs/images/pools6.png) · [high availability](docs/images/ha.png) · [reservations](docs/images/reservations.png) · [leases](docs/images/leases.png) · [IPv6 leases](docs/images/leases6.png)
 
 ## Quick start
 
@@ -117,7 +117,7 @@ that call the account `kea` rather than `_kea`, use that instead.
 ### Reloading Kea 3.x
 
 Kea 3.2 ships **no `keactrl`**, so EZ-KEA's default reload strategy cannot work
-there. In **Settings → Reload Strategy**, choose **Control socket
+there. In **Global Settings → Reload Strategy**, choose **Control socket
 (config-reload)** (`KEA_RELOAD_STRATEGY=control-socket`), which talks to the
 daemon's own socket and reports whether the reload actually succeeded. Make sure
 the daemon has a `control-socket` (or 3.0+ `control-sockets`) block — ISC's
@@ -127,7 +127,7 @@ shipped config does.
 
 One Python process (waitress serving a Flask app) on the same host as Kea.
 
-- **Discovery.** EZ-KEA determines the config file the running Kea process is actually using, so you never tell it where your config lives and it can't drift onto a stale copy. Mechanically it reads `/proc` for `kea-dhcp4` and `kea-dhcp6` and takes the path each daemon was launched with, falling back to `/etc/kea/` and then `/usr/local/etc/kea/`. Every path is overridable in Settings. With no Kea present it sandboxes to `./data/` and runs in demo mode.
+- **Discovery.** EZ-KEA determines the config file the running Kea process is actually using, so you never tell it where your config lives and it can't drift onto a stale copy. Mechanically it reads `/proc` for `kea-dhcp4` and `kea-dhcp6` and takes the path each daemon was launched with, falling back to `/etc/kea/` and then `/usr/local/etc/kea/`. Every path is overridable in Global Settings. With no Kea present it sandboxes to `./data/` and runs in demo mode.
 - **In-place editing.** Changes go into Kea's own JSON. Writes to a given config file are serialized with a lock.
 - **Backup, validate, apply.** Every config write copies the existing file first and aborts if that copy fails, keeping the hundred most recent (namespaced by a hash of the config path, so a restore can't grab the wrong file's backup). Applying runs `kea-dhcpN -t` and stops on failure, then reloads via `keactrl`, the control socket's `config-reload`, or a SIGHUP to a Docker container — an explicit setting, never guessed.
 - **Storage.** Two embedded SQLite files under `./data/`: one for local accounts and settings, one a disposable log index that rebuilds itself if you delete it. No Postgres, no MySQL, no broker, nothing else to run.
@@ -135,12 +135,13 @@ One Python process (waitress serving a Flask app) on the same host as Kea.
 
 ## What it does
 
-- **DHCPv4 and DHCPv6** — shared networks, standalone subnets, address pools, and per-subnet DHCP options for both families. Subnets are created and deleted through the UI (one address pool each); options are editable in place.
+- **Live homepage dashboard** — separate IPv4 and IPv6 cards, each with an HA status badge, active lease/reservation/subnet counts, an async daemon-health badge (Running, Not Configured, Unreachable, or Demo Mode), and pool-utilization bars grouped by shared network (a standalone subnet counts as its own group), expandable to per-subnet detail.
+- **DHCPv4 and DHCPv6** — shared networks, standalone subnets, address pools, and per-subnet DHCP options for both families. Subnets and shared networks are created, edited in place, and deleted through the UI (one address pool each per subnet). A subnet's CIDR is locked once created, but its gateway, pool range, and static-only toggle are editable; a shared network's name can be renamed. DHCP options are editable in place.
 - **Prefix delegation** — `pd-pools` with a delegated length, validated against the pool's own prefix, so downstream routers and CPE get a block rather than a single address.
-- **Reservations** — MAC-based for DHCPv4; DUID-based for DHCPv6, covering fixed addresses, delegated prefixes, or both on one reservation.
+- **Reservations** — MAC-based for DHCPv4; DUID-based for DHCPv6, covering fixed addresses, delegated prefixes, or both on one reservation. Editable in place (MAC/DUID, IP, and hostname; the subnet is locked). The list pages have free-text search, a subnet CIDR filter, sortable columns, CSV export, and pagination.
 - **High availability** — writes and edits Kea's `libdhcp_ha.so` hook for hot-standby, load-balancing or passive-backup, with the peer list, roles and timers as fields and the peer set validated before saving. A heartbeat button reads current peer state back off the daemon's control socket. EZ-KEA configures HA and reads its status; it does not drive failover, and the Control Agent each peer talks to is out of scope.
 - **Historical log search** — a background thread indexes your Kea logs into SQLite (FTS5 where available), including rotated and gzipped archives, and survives rotation by inode change, truncation or `copytruncate`. Search by MAC (any spelling, including inside a client-id or DUID), IPv4, IPv6, CIDR range, or free text, filtered by severity, address family and time range. Results export to CSV and every search is a linkable URL. Retention defaults to 365 days.
-- **Leases** — active DHCPv4 and DHCPv6 lease tables read from Kea's memfile CSV. These are plain tables; the search feature is log search, above.
+- **Leases** — active DHCPv4 and DHCPv6 lease tables read from Kea's memfile CSV, with free-text search (MAC/IP/hostname, or DUID/IPv6/hostname for v6), a subnet CIDR filter, a status filter, an expiration-timeframe filter (presets like "expiring in the next 24 hours" plus a custom date range), sortable columns, CSV export, and pagination.
 - **Validation, backup and restore** — overlap and range checks in the forms, a syntax check against Kea's own binary, automatic pre-write backups, and restore from the UI.
 - **Kea 2.x and 3.x** — EZ-KEA detects the daemon's version and writes the control-socket syntax that version accepts (3.0 renamed `control-socket` to `control-sockets`), and reads either. Exercised against Kea 2.0.2 and 3.2.0 in the testbed.
 - **Multi-user auth** — local accounts, optional TOTP two-factor with recovery codes, and SMTP-backed password reset. Accounts are administrator or standard; admins additionally manage users, licensing and email settings. There is no read-only role — any account can change DHCP configuration.
@@ -219,7 +220,7 @@ Tagged releases are on the [Releases page](https://github.com/fenleytech/ez-kea/
 
 ## Development
 
-**440 unit and route tests**, running with no Kea install and no network access:
+**462 unit and route tests**, running with no Kea install and no network access:
 
 ```bash
 pip install -r requirements.txt
