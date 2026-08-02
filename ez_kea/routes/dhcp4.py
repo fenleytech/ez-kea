@@ -7,8 +7,22 @@ from flask import Blueprint, render_template, request, redirect, url_for, curren
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_ipv4_address, has_overlap, return_available_ips, get_active_leases, sanitize_hostname
+from ..core import state_index
+from ..core.csv_export import stream_csv_response
 
 dhcp4_bp = Blueprint('dhcp4', __name__)
+
+
+def _pagination_params() -> Tuple[int, str, str]:
+    """Page number, sort column, and direction, off the request -- the same
+    three params every search-index-backed list page reads."""
+    try:
+        page = max(1, int(request.values.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    sort = (request.values.get("sort", "") or "").strip()
+    direction = (request.values.get("direction", "") or "").strip().lower()
+    return page, sort, direction
 
 
 def _find_subnet4(config: Dict[str, Any], subnet: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -203,32 +217,72 @@ def _mac_reservation_sort_key(reservation: Dict[str, Any]) -> Tuple[int, Any]:
 @dhcp4_bp.route("/mac-reservations")
 @login_required
 def mac_reservations() -> str:
-    """Render the list of MAC address reservations across all configured subnets."""
-    config = load_json(current_app.config["DHCP_CONFIG_FILE"])
-    mac_reservations = []
+    """Search/filter/sort MAC reservations via the state index (see
+    core/state_index.py) instead of the old full-config-scan-and-sort -- also
+    the only way this page can now show a reservation search box and CSV
+    export consistent with the Leases and Logs pages."""
+    q = (request.values.get("q") or "").strip()
+    subnet = (request.values.get("subnet") or "").strip()
+    page, sort, direction = _pagination_params()
+    sort = sort or "ip_address"
+    direction = direction or "asc"
+    page_size = state_index.DEFAULT_PAGE_SIZE
 
-    # Standalone subnets (Dhcp4.subnet4[])
-    for subnet in config.get("Dhcp4", {}).get("subnet4", []):
-        for reservation in subnet.get("reservations", []):
-            res_copy = reservation.copy()
-            res_copy["shared_network_name"] = None
-            res_copy["subnet"] = subnet.get("subnet")
-            res_copy["hostname"] = res_copy.get("hostname", "N/A")
-            mac_reservations.append(res_copy)
+    conn = state_index.connect(current_app.config["STATE_INDEX_DB"])
+    try:
+        # Ingest is fingerprint-gated (a cheap stat check when nothing
+        # changed), so refreshing inline here guarantees the page always
+        # reflects the config as it is right now rather than being stale by
+        # up to STATE_INDEX_INTERVAL seconds.
+        state_index.ingest_all(dict(current_app.config), conn, kinds=["reservation4"])
+        result = state_index.search_reservation4(
+            conn, q=q or None, subnet=subnet or None,
+            sort=sort, direction=direction,
+            limit=page_size, offset=(page - 1) * page_size,
+        )
+    finally:
+        conn.close()
 
-    # Subnets nested inside shared-networks
-    for network in config.get("Dhcp4", {}).get("shared-networks", []):
-        shared_network_name = network.get("name")
-        for subnet in network.get("subnet4", []):
-            for reservation in subnet.get("reservations", []):
-                res_copy = reservation.copy()
-                res_copy["shared_network_name"] = shared_network_name
-                res_copy["subnet"] = subnet.get("subnet")
-                res_copy["hostname"] = res_copy.get("hostname", "N/A")
-                mac_reservations.append(res_copy)
+    return render_template(
+        "mac_reservations.html",
+        mac_reservations=result["rows"],
+        total=result["total"],
+        page=page, page_size=page_size,
+        has_next=(page * page_size) < result["total"],
+        search_query=q, subnet=subnet, sort=sort, direction=direction,
+    )
 
-    mac_reservations.sort(key=_mac_reservation_sort_key)
-    return render_template("mac_reservations.html", mac_reservations=mac_reservations)
+
+@dhcp4_bp.route("/mac-reservations/export.csv")
+@login_required
+def mac_reservations_export() -> Response:
+    """Stream the current reservation search as CSV."""
+    q = (request.values.get("q") or "").strip() or None
+    subnet = (request.values.get("subnet") or "").strip() or None
+    _, sort, direction = _pagination_params()
+    app_config = dict(current_app.config)
+
+    def rows():
+        conn = state_index.connect(app_config["STATE_INDEX_DB"])
+        try:
+            state_index.ingest_all(app_config, conn, kinds=["reservation4"])
+            yield from state_index.iter_search(
+                conn, "reservation4", q=q, subnet=subnet,
+                sort=sort or "ip_address", direction=direction or "asc",
+            )
+        finally:
+            conn.close()
+
+    return stream_csv_response(
+        ["mac_address", "ip_address", "hostname", "subnet", "shared_network_name"],
+        rows(),
+        lambda row: [
+            row["mac_address"] or "", row["ip_address"] or "", row["hostname"] or "",
+            row["subnet"] or "", row["shared_network_name"] or "",
+        ],
+        "ez-kea-reservations4",
+        state_index.EXPORT_MAX_ROWS,
+    )
 
 @dhcp4_bp.route("/new-reservation", methods=["GET", "POST"])
 @login_required
@@ -274,6 +328,10 @@ def new_reservation() -> Union[str, Response, Tuple[str, int]]:
         })
 
         save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
+        # Unlike logs/leases, EZ-KEA itself just wrote this reservation --
+        # without an immediate reindex it wouldn't show up in a search until
+        # the next background pass, which would look like the save failed.
+        state_index.reindex_now(current_app, kinds=["reservation4"])
         return redirect(url_for("main.dhcp4.mac_reservations"))
 
     return render_template("new_reservation.html", subnet_data=subnet_data, errors=errors)
@@ -309,17 +367,96 @@ def delete_reservation() -> Response:
                 break
 
     save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
+    state_index.reindex_now(current_app, kinds=["reservation4"])
     return redirect(url_for("main.dhcp4.mac_reservations"))
 
 @dhcp4_bp.route("/leases")
 @login_required
 def leases() -> str:
-    """Render the active DHCP leases table from the keystore."""
-    from ..core.validation import unix_to_human_readable, get_active_leases
-    active_leases = get_active_leases(current_app.config["DHCP_LEASES_FILE"])
-    
-    # Format dates
-    for lease in active_leases:
-         lease["expiration_time"] = unix_to_human_readable(lease["expire"])
-         
-    return render_template("leases.html", leases=active_leases)
+    """Search/filter/sort the DHCPv4 lease table via the state index.
+
+    Covers every lease currently in the file, not just active ones (see
+    core/state_index.py's module docstring) -- the `status` filter defaults
+    to unset, so "active" is one choice among active/expired/declined/
+    reclaimed rather than the only thing the page can show.
+    """
+    from ..core.validation import unix_to_human_readable
+
+    q = (request.values.get("q") or "").strip()
+    status = (request.values.get("status") or "").strip() or None
+    subnet_id_raw = (request.values.get("subnet_id") or "").strip()
+    subnet_id = int(subnet_id_raw) if subnet_id_raw.isdigit() else None
+    page, sort, direction = _pagination_params()
+    sort = sort or "expire"
+    direction = direction or "desc"
+    page_size = state_index.DEFAULT_PAGE_SIZE
+
+    conn = state_index.connect(current_app.config["STATE_INDEX_DB"])
+    try:
+        state_index.ingest_all(dict(current_app.config), conn, kinds=["lease4"])
+        result = state_index.search_lease4(
+            conn, q=q or None, status=status, subnet_id=subnet_id,
+            sort=sort, direction=direction,
+            limit=page_size, offset=(page - 1) * page_size,
+        )
+        stats = state_index.index_stats(conn)
+    finally:
+        conn.close()
+
+    stats["last_ingest_text"] = (
+        unix_to_human_readable(stats["last_ingest"]) if stats["last_ingest"] else "never"
+    )
+
+    rows = result["rows"]
+    for row in rows:
+        row["expiration_time"] = unix_to_human_readable(row["expire"]) if row["expire"] else "-"
+        row["status"] = state_index.status_label(row["state"], row["expire"])
+
+    return render_template(
+        "leases.html",
+        leases=rows,
+        total=result["total"],
+        page=page, page_size=page_size,
+        has_next=(page * page_size) < result["total"],
+        search_query=q, status=status or "", subnet_id=subnet_id_raw,
+        sort=sort, direction=direction,
+        stats=stats, statuses=state_index.STATUS_LABELS,
+    )
+
+
+@dhcp4_bp.route("/leases/export.csv")
+@login_required
+def leases_export() -> Response:
+    """Stream the current lease search as CSV."""
+    q = (request.values.get("q") or "").strip() or None
+    status = (request.values.get("status") or "").strip() or None
+    subnet_id_raw = (request.values.get("subnet_id") or "").strip()
+    subnet_id = int(subnet_id_raw) if subnet_id_raw.isdigit() else None
+    _, sort, direction = _pagination_params()
+    app_config = dict(current_app.config)
+
+    def rows():
+        conn = state_index.connect(app_config["STATE_INDEX_DB"])
+        try:
+            state_index.ingest_all(app_config, conn, kinds=["lease4"])
+            yield from state_index.iter_search(
+                conn, "lease4", q=q, status=status, subnet_id=subnet_id,
+                sort=sort or "expire", direction=direction or "desc",
+            )
+        finally:
+            conn.close()
+
+    from datetime import datetime
+
+    def to_values(row):
+        return [
+            row["address"], row["mac_address"] or "", row["client_id"] or "",
+            row["hostname"] or "", row["subnet_id"] or "", row["valid_lifetime"] or "",
+            datetime.fromtimestamp(row["expire"]).isoformat(sep=" ") if row["expire"] else "",
+            row["state"],
+        ]
+
+    return stream_csv_response(
+        ["address", "mac_address", "client_id", "hostname", "subnet_id", "valid_lifetime", "expire", "state"],
+        rows(), to_values, "ez-kea-leases4", state_index.EXPORT_MAX_ROWS,
+    )

@@ -7,9 +7,23 @@ from flask import Blueprint, render_template, request, redirect, url_for, curren
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_duid, has_overlap, return_available_ips, get_active_leases, get_active_leases6, unix_to_human_readable, sanitize_hostname
+from ..core import state_index
+from ..core.csv_export import stream_csv_response
 import ipaddress
 
 dhcp6_bp = Blueprint('dhcp6', __name__)
+
+
+def _pagination_params() -> Tuple[int, str, str]:
+    """Page number, sort column, and direction, off the request -- the same
+    three params every search-index-backed list page reads."""
+    try:
+        page = max(1, int(request.values.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    sort = (request.values.get("sort", "") or "").strip()
+    direction = (request.values.get("direction", "") or "").strip().lower()
+    return page, sort, direction
 
 
 def _find_subnet6(config: Dict[str, Any], subnet: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -284,32 +298,66 @@ def _collect_subnet6_cidrs(config: Dict[str, Any]) -> list:
 @dhcp6_bp.route("/reservations6")
 @login_required
 def reservations6() -> str:
-    """Render the list of DUID-based reservations across all configured subnet6s."""
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
-    reservations = []
+    """Search/filter/sort DUID reservations via the state index (see
+    core/state_index.py)."""
+    q = (request.values.get("q") or "").strip()
+    subnet = (request.values.get("subnet") or "").strip()
+    page, sort, direction = _pagination_params()
+    sort = sort or "ip_address"
+    direction = direction or "asc"
+    page_size = state_index.DEFAULT_PAGE_SIZE
 
-    # Standalone subnets (Dhcp6.subnet6[])
-    for subnet in config.get("Dhcp6", {}).get("subnet6", []):
-        for reservation in subnet.get("reservations", []):
-            res_copy = reservation.copy()
-            res_copy["shared_network_name"] = None
-            res_copy["subnet"] = subnet.get("subnet")
-            res_copy["hostname"] = res_copy.get("hostname", "N/A")
-            reservations.append(res_copy)
+    conn = state_index.connect(current_app.config["STATE_INDEX_DB"])
+    try:
+        state_index.ingest_all(dict(current_app.config), conn, kinds=["reservation6"])
+        result = state_index.search_reservation6(
+            conn, q=q or None, subnet=subnet or None,
+            sort=sort, direction=direction,
+            limit=page_size, offset=(page - 1) * page_size,
+        )
+    finally:
+        conn.close()
 
-    # Subnets nested inside shared-networks
-    for network in config.get("Dhcp6", {}).get("shared-networks", []):
-        shared_network_name = network.get("name")
-        for subnet in network.get("subnet6", []):
-            for reservation in subnet.get("reservations", []):
-                res_copy = reservation.copy()
-                res_copy["shared_network_name"] = shared_network_name
-                res_copy["subnet"] = subnet.get("subnet")
-                res_copy["hostname"] = res_copy.get("hostname", "N/A")
-                reservations.append(res_copy)
+    return render_template(
+        "duid_reservations.html",
+        reservations=result["rows"],
+        total=result["total"],
+        page=page, page_size=page_size,
+        has_next=(page * page_size) < result["total"],
+        search_query=q, subnet=subnet, sort=sort, direction=direction,
+    )
 
-    reservations.sort(key=_duid_reservation_sort_key)
-    return render_template("duid_reservations.html", reservations=reservations)
+
+@dhcp6_bp.route("/reservations6/export.csv")
+@login_required
+def reservations6_export() -> Response:
+    """Stream the current reservation search as CSV."""
+    q = (request.values.get("q") or "").strip() or None
+    subnet = (request.values.get("subnet") or "").strip() or None
+    _, sort, direction = _pagination_params()
+    app_config = dict(current_app.config)
+
+    def rows():
+        conn = state_index.connect(app_config["STATE_INDEX_DB"])
+        try:
+            state_index.ingest_all(app_config, conn, kinds=["reservation6"])
+            yield from state_index.iter_search(
+                conn, "reservation6", q=q, subnet=subnet,
+                sort=sort or "ip_address", direction=direction or "asc",
+            )
+        finally:
+            conn.close()
+
+    return stream_csv_response(
+        ["duid", "ip_address", "prefix", "hostname", "subnet", "shared_network_name"],
+        rows(),
+        lambda row: [
+            row["duid"] or "", row["ip_address"] or "", row["prefix"] or "",
+            row["hostname"] or "", row["subnet"] or "", row["shared_network_name"] or "",
+        ],
+        "ez-kea-reservations6",
+        state_index.EXPORT_MAX_ROWS,
+    )
 
 @dhcp6_bp.route("/new-reservation6", methods=["GET", "POST"])
 @login_required
@@ -369,6 +417,7 @@ def new_reservation6() -> Union[str, Response, Tuple[str, int]]:
         subnet_obj.setdefault("reservations", []).append(new_reservation)
 
         save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
+        state_index.reindex_now(current_app, kinds=["reservation6"])
         return redirect(url_for("main.dhcp6.reservations6"))
 
     return render_template("new_reservation6.html", available_subnets=available_subnets, errors=errors)
@@ -391,15 +440,104 @@ def delete_reservation6() -> Response:
             ]
 
     save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
+    state_index.reindex_now(current_app, kinds=["reservation6"])
     return redirect(url_for("main.dhcp6.reservations6"))
 
 @dhcp6_bp.route("/leases6")
 @login_required
 def leases6() -> str:
-    """Render the active DHCPv6 leases table (IA_NA/IA_TA/IA_PD) from the keystore."""
-    active_leases = get_active_leases6(current_app.config["DHCP6_LEASES_FILE"])
+    """Search/filter/sort the DHCPv6 lease table (IA_NA/IA_TA/IA_PD) via the
+    state index. Covers every lease currently in the file, not just active
+    ones -- see core/state_index.py's module docstring."""
+    q = (request.values.get("q") or "").strip()
+    status = (request.values.get("status") or "").strip() or None
+    subnet_id_raw = (request.values.get("subnet_id") or "").strip()
+    subnet_id = int(subnet_id_raw) if subnet_id_raw.isdigit() else None
+    lease_type_raw = (request.values.get("lease_type") or "").strip()
+    lease_type = (
+        {v: k for k, v in state_index.LEASE6_TYPE_LABELS.items()}.get(lease_type_raw)
+        if lease_type_raw else None
+    )
+    page, sort, direction = _pagination_params()
+    sort = sort or "expire"
+    direction = direction or "desc"
+    page_size = state_index.DEFAULT_PAGE_SIZE
 
-    for lease in active_leases:
-        lease["expiration_time"] = unix_to_human_readable(lease["expire"])
+    conn = state_index.connect(current_app.config["STATE_INDEX_DB"])
+    try:
+        state_index.ingest_all(dict(current_app.config), conn, kinds=["lease6"])
+        result = state_index.search_lease6(
+            conn, q=q or None, status=status, subnet_id=subnet_id, lease_type=lease_type,
+            sort=sort, direction=direction,
+            limit=page_size, offset=(page - 1) * page_size,
+        )
+        stats = state_index.index_stats(conn)
+    finally:
+        conn.close()
 
-    return render_template("leases6.html", leases=active_leases)
+    stats["last_ingest_text"] = (
+        unix_to_human_readable(stats["last_ingest"]) if stats["last_ingest"] else "never"
+    )
+
+    rows = result["rows"]
+    for row in rows:
+        row["expiration_time"] = unix_to_human_readable(row["expire"]) if row["expire"] else "-"
+        row["status"] = state_index.status_label(row["state"], row["expire"])
+        row["lease_type_label"] = state_index.LEASE6_TYPE_LABELS.get(row["lease_type"], "IA_NA")
+
+    return render_template(
+        "leases6.html",
+        leases=rows,
+        total=result["total"],
+        page=page, page_size=page_size,
+        has_next=(page * page_size) < result["total"],
+        search_query=q, status=status or "", subnet_id=subnet_id_raw, lease_type=lease_type_raw,
+        sort=sort, direction=direction,
+        stats=stats, statuses=state_index.STATUS_LABELS,
+        lease_types=list(state_index.LEASE6_TYPE_LABELS.values()),
+    )
+
+
+@dhcp6_bp.route("/leases6/export.csv")
+@login_required
+def leases6_export() -> Response:
+    """Stream the current lease search as CSV."""
+    q = (request.values.get("q") or "").strip() or None
+    status = (request.values.get("status") or "").strip() or None
+    subnet_id_raw = (request.values.get("subnet_id") or "").strip()
+    subnet_id = int(subnet_id_raw) if subnet_id_raw.isdigit() else None
+    lease_type_raw = (request.values.get("lease_type") or "").strip()
+    lease_type = (
+        {v: k for k, v in state_index.LEASE6_TYPE_LABELS.items()}.get(lease_type_raw)
+        if lease_type_raw else None
+    )
+    _, sort, direction = _pagination_params()
+    app_config = dict(current_app.config)
+
+    def rows():
+        conn = state_index.connect(app_config["STATE_INDEX_DB"])
+        try:
+            state_index.ingest_all(app_config, conn, kinds=["lease6"])
+            yield from state_index.iter_search(
+                conn, "lease6", q=q, status=status, subnet_id=subnet_id, lease_type=lease_type,
+                sort=sort or "expire", direction=direction or "desc",
+            )
+        finally:
+            conn.close()
+
+    from datetime import datetime
+
+    def to_values(row):
+        return [
+            row["address"], row["prefix_len"] or "", row["duid"] or "",
+            row["hostname"] or "", row["subnet_id"] or "",
+            row["pref_lifetime"] or "", row["valid_lifetime"] or "",
+            datetime.fromtimestamp(row["expire"]).isoformat(sep=" ") if row["expire"] else "",
+            state_index.LEASE6_TYPE_LABELS.get(row["lease_type"], "IA_NA"), row["state"],
+        ]
+
+    return stream_csv_response(
+        ["address", "prefix_len", "duid", "hostname", "subnet_id", "pref_lifetime",
+         "valid_lifetime", "expire", "lease_type", "state"],
+        rows(), to_values, "ez-kea-leases6", state_index.EXPORT_MAX_ROWS,
+    )

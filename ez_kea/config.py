@@ -42,6 +42,18 @@ class Config:
     # keep everything and manage disk yourself.
     LOG_INDEX_RETENTION_DAYS = int(os.getenv("LOG_INDEX_RETENTION_DAYS", "365"))
 
+    # --- Lease/reservation search index -------------------------------------
+    # Backing store for fast search/filter/sort/export on the Leases and
+    # Reservations pages (see core/state_index.py). Separate file from
+    # ez-kea.db and from LOG_INDEX_DB for the same reason both of those are
+    # separate: disposable, safe to delete, rebuilds itself.
+    STATE_INDEX_DB      = os.getenv("STATE_INDEX_DB", "./data/ez-kea-stateindex.db")
+    STATE_INDEX_ENABLED = os.getenv("STATE_INDEX_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+    # Seconds between background ingest passes. Lease/reservation state is
+    # checked more interactively than logs ("did this device just get an
+    # IP?"), so this defaults well below LOG_INDEX_INTERVAL.
+    STATE_INDEX_INTERVAL = int(os.getenv("STATE_INDEX_INTERVAL", "20"))
+
     BACKUP_DIR       = os.getenv("BACKUP_DIR",       "./data/backups/")
     SETTINGS_FILE    = os.getenv("SETTINGS_FILE",    "./data/ez-kea-settings.json")
     SECRET_KEY       = os.getenv("SECRET_KEY",       "dev")

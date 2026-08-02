@@ -21,6 +21,8 @@ import os
 # the developer's real ./data directory on a timer. The index itself is tested
 # directly in test_log_index.py.
 os.environ.setdefault("LOG_INDEX_ENABLED", "0")
+# Same reasoning, for the lease/reservation search index (core/state_index.py).
+os.environ.setdefault("STATE_INDEX_ENABLED", "0")
 
 from werkzeug.security import generate_password_hash  # noqa: E402
 
