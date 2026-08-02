@@ -227,6 +227,45 @@ a:hover {
   display: inline;
 }
 
+/* Two-state segmented toggle (e.g. DHCPv4/DHCPv6 page switch) — reads as one
+   control with two positions rather than two unrelated buttons side by side,
+   the way .btn-outline/.btn-primary pairs did before. Each option is a real
+   link (this switches pages, not a checkbox), styled as one pill split in
+   half with the active side filled. */
+.segmented-toggle {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.segmented-toggle-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.segmented-toggle-option:hover {
+  color: var(--text-primary);
+}
+
+.segmented-toggle-option.active {
+  background: var(--btn-primary-bg);
+  color: var(--on-accent);
+}
+
+.segmented-toggle-option.active:hover {
+  background: var(--btn-primary-bg-hover);
+}
+
 /* Forms */
 .form-group {
   margin-bottom: 1.25rem;
@@ -446,9 +485,29 @@ tbody tr:hover {
   gap: 0.5rem;
 }
 
-.nav-link:hover, .nav-link.active {
+.nav-link:hover, .nav-link.active, .nav-link.open {
   color: white;
   background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* IPv4/IPv6 nav dropdowns — same trigger-button + panel pattern as the
+   account menu below, but anchored under their own trigger (left-aligned)
+   instead of pinned to the navbar's right edge, since these sit inline in
+   the nav row rather than in the top-right corner. */
+.nav-dropdown {
+  position: relative;
+}
+
+.nav-dropdown-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.nav-dropdown-menu {
+  left: 0;
+  right: auto;
 }
 
 /* Account dropdown — condenses profile/admin links (Users, License, Email
@@ -486,13 +545,13 @@ tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.05);
 }
 
-.navbar-account-btn .chevron {
+.navbar-account-btn .chevron, .nav-dropdown-btn .chevron {
   width: 14px;
   height: 14px;
   transition: transform 0.15s;
 }
 
-.navbar-account-btn.open .chevron {
+.navbar-account-btn.open .chevron, .nav-dropdown-btn.open .chevron {
   transform: rotate(180deg);
 }
 

@@ -603,18 +603,31 @@ def logs_reindex() -> Response:
     flash("Log index cleared — rebuilding from the log files now.", "success")
     return redirect(url_for("main.system.logs"))
 
-def _build_global_settings_context(version: str = "4") -> Dict[str, Any]:
-    """Build the template context shared by the global-settings GET view and
+def _build_dhcp_settings_context(version: str = "4") -> Dict[str, Any]:
+    """Build the template context shared by the DHCP-settings GET view and
     the error-path re-render of the same page after a failed POST."""
     daemon = _resolve_daemon_config(version)
-    names = _global_settings_field_names(version)
-    prefix = names["settings_prefix"]
 
     config = load_json(daemon["config_file"], default=_DEFAULT_KEA6_CONFIG if version == "6" else None)
     dhcp = config.get(daemon["dhcp_root_key"], {})
 
     filtered_settings = {k: v for k, v in dhcp.items() if k != "shared-networks"}
     global_options = {opt["name"]: opt["data"] for opt in dhcp.get("option-data", [])}
+
+    return {
+        "version": version,
+        "global_settings": filtered_settings,
+        "global_options": global_options,
+    }
+
+def _build_app_settings_context(version: str = "4") -> Dict[str, Any]:
+    """Build the template context for the EZ-KEA application-settings page
+    (config/log file paths, binary paths, Docker deployment, reload
+    strategy) for the given DHCP version."""
+    daemon = _resolve_daemon_config(version)
+    names = _global_settings_field_names(version)
+    prefix = names["settings_prefix"]
+
     ez_kea_settings = load_settings(current_app.config["SETTINGS_FILE"])
     # Overlay current app config values (env vars take priority over saved settings)
     ez_kea_settings[f"{prefix}_config_file"] = daemon["config_file"]
@@ -629,32 +642,148 @@ def _build_global_settings_context(version: str = "4") -> Dict[str, Any]:
 
     return {
         "version": version,
-        "global_settings": filtered_settings,
-        "global_options": global_options,
         "ez_kea_settings": ez_kea_settings,
     }
 
 @system_bp.route("/global-settings")
 @login_required
 def global_settings() -> str:
-    """Render the global DHCPv4 Kea configuration settings page."""
-    return render_template("global_settings.html", **_build_global_settings_context("4"))
+    """Render the DHCPv4 Kea daemon global-parameters settings page."""
+    return render_template("global_settings.html", **_build_dhcp_settings_context("4"))
 
 @system_bp.route("/global-settings/<version>")
 @login_required
 def global_settings_version(version: str) -> Union[str, Tuple[str, int]]:
-    """Render the global Kea configuration settings page for the given version (4 or 6)."""
+    """Render the Kea daemon global-parameters settings page for the given version (4 or 6)."""
     if version not in ("4", "6"):
         return "Unknown DHCP version — must be '4' or '6'", 400
-    return render_template("global_settings.html", **_build_global_settings_context(version))
+    return render_template("global_settings.html", **_build_dhcp_settings_context(version))
 
-def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]:
-    """Save user-updated global configuration parameters for the given DHCP
+@system_bp.route("/app-settings")
+@login_required
+def app_settings() -> str:
+    """Render the EZ-KEA application-settings page (v4 tab)."""
+    return render_template("app_settings.html", **_build_app_settings_context("4"))
+
+@system_bp.route("/app-settings/<version>")
+@login_required
+def app_settings_version(version: str) -> Union[str, Tuple[str, int]]:
+    """Render the EZ-KEA application-settings page for the given version (4 or 6)."""
+    if version not in ("4", "6"):
+        return "Unknown DHCP version — must be '4' or '6'", 400
+    return render_template("app_settings.html", **_build_app_settings_context(version))
+
+def _save_dhcp_settings_impl(version: str) -> Union[Response, Tuple[str, int]]:
+    """Save user-updated Kea daemon global (non-subnet) DHCP parameters —
+    interfaces, lease timers, DUID, global options, host-reservation
+    identifiers — for the given DHCP version (4 or 6)."""
+    daemon = _resolve_daemon_config(version)
+    redirect_endpoint = "main.system.global_settings" if version == "4" else "main.system.global_settings_version"
+    redirect_kwargs = {} if version == "4" else {"version": version}
+    current_config_file = daemon["config_file"]
+
+    # ── Validate timer fields up front so a bad value never partially
+    # mutates the config before we know the whole submission is clean.
+    timer_fields = TIMER_FIELDS6 if version == "6" else TIMER_FIELDS
+    parsed_timers: Dict[str, int] = {}
+    timer_errors = []
+    for timer in timer_fields:
+        raw_value = request.form.get(timer, "").strip()
+        if not raw_value:
+            continue
+        try:
+            value = int(raw_value)
+        except ValueError:
+            timer_errors.append(f"{timer.replace('-', ' ').title()} must be a whole number.")
+            continue
+        if value < MIN_TIMER_VALUE or value > MAX_TIMER_VALUE:
+            timer_errors.append(
+                f"{timer.replace('-', ' ').title()} must be between {MIN_TIMER_VALUE} and {MAX_TIMER_VALUE}."
+            )
+            continue
+        parsed_timers[timer] = value
+
+    if timer_errors:
+        return render_template("global_settings.html", errors=timer_errors, **_build_dhcp_settings_context(version)), 400
+
+    config = load_json(current_config_file, default=_DEFAULT_KEA6_CONFIG if version == "6" else None)
+    if daemon["dhcp_root_key"] not in config: config[daemon["dhcp_root_key"]] = {}
+    dhcp = config[daemon["dhcp_root_key"]]
+
+    if "interfaces-config" in request.form:
+        seen = set()
+        interfaces = []
+        for i in request.form["interfaces-config"].split(","):
+            name = i.strip()
+            if name and name not in seen:
+                seen.add(name)
+                interfaces.append(name)
+        dhcp.setdefault("interfaces-config", {})["interfaces"] = interfaces
+
+    for timer in timer_fields:
+        if timer in parsed_timers:
+            dhcp[timer] = parsed_timers[timer]
+        elif timer in dhcp and not request.form.get(timer):
+            # Clear field if user left it blank (optional timers)
+            if timer in ("renew-timer", "rebind-timer"):
+                dhcp.pop(timer, None)
+
+    if "host-reservation-identifiers" in request.form:
+        identifiers = [
+            i.strip() for i in request.form["host-reservation-identifiers"].split(",") if i.strip()
+        ]
+        if identifiers:
+            dhcp["host-reservation-identifiers"] = identifiers
+        else:
+            # Kea rejects an empty list outright ("syntax error, unexpected ]"),
+            # so "none set" has to be represented by the key being absent.
+            dhcp.pop("host-reservation-identifiers", None)
+
+    # DHCPv6-only: server-id (Dhcp6.server-id). Only touched when the field
+    # is present and non-blank — leaving it blank means "let Kea auto-generate
+    # one," not "clear whatever's already there."
+    if version == "6":
+        server_id_type = request.form.get("server-id-type", "").strip()
+        if server_id_type:
+            server_id = dhcp.setdefault("server-id", {})
+            server_id["type"] = server_id_type
+            identifier = request.form.get("server-id-identifier", "").strip()
+            if identifier:
+                server_id["identifier"] = identifier
+
+    # Global option-data: v4 gets DNS/NTP/domain-name, v6 gets its own
+    # namespace (dns-servers/sntp-servers/domain-search).
+    if version == "6":
+        managed_options = {
+            "dns-servers": request.form.get("opt-dns6", "").strip(),
+            "sntp-servers": request.form.get("opt-sntp6", "").strip(),
+            "domain-search": request.form.get("opt-domain-search6", "").strip(),
+        }
+    else:
+        managed_options = {
+            "domain-name-servers": request.form.get("opt-dns", "").strip(),
+            "ntp-servers": request.form.get("opt-ntp", "").strip(),
+            "domain-name": request.form.get("opt-domain", "").strip(),
+        }
+    existing_opts = dhcp.get("option-data", [])
+    # Remove managed options then re-add non-empty ones
+    existing_opts = [o for o in existing_opts if o.get("name") not in managed_options]
+    for name, data in managed_options.items():
+        if data:
+            existing_opts.append({"name": name, "data": data})
+    dhcp["option-data"] = existing_opts
+
+    save_kea_config(config, current_config_file, current_app.config["BACKUP_DIR"])
+    return redirect(url_for(redirect_endpoint, **redirect_kwargs))
+
+def _save_app_settings_impl(version: str) -> Union[Response, Tuple[str, int]]:
+    """Save user-updated EZ-KEA application settings (config/log file paths,
+    Kea binary paths, Docker deployment, reload strategy) for the given DHCP
     version (4 or 6)."""
     daemon = _resolve_daemon_config(version)
     names = _global_settings_field_names(version)
     prefix = names["settings_prefix"]
-    redirect_endpoint = "main.system.global_settings" if version == "4" else "main.system.global_settings_version"
+    redirect_endpoint = "main.system.app_settings" if version == "4" else "main.system.app_settings_version"
     redirect_kwargs = {} if version == "4" else {"version": version}
     current_config_file = daemon["config_file"]
 
@@ -664,12 +793,12 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
 
     # Only (re-)validate a command field when it's actually being changed. If we
     # revalidated the already-stored value on every save regardless, an
-    # unrelated settings change (e.g. just updating the DNS option) would fail
-    # outright the moment the previously-configured kea-dhcp4/keactrl binary
-    # stops resolving (host rebuilt, PATH changed, etc.) — that's a usability
-    # regression, not a security requirement. The actual security boundary
-    # (can't exec anything but an allowed, executable binary) is still fully
-    # enforced at set-time here AND, independently, at execution time in
+    # unrelated settings change (e.g. just updating the Docker container name)
+    # would fail outright the moment the previously-configured kea-dhcp4/keactrl
+    # binary stops resolving (host rebuilt, PATH changed, etc.) — that's a
+    # usability regression, not a security requirement. The actual security
+    # boundary (can't exec anything but an allowed, executable binary) is still
+    # fully enforced at set-time here AND, independently, at execution time in
     # test_config()/apply_config() regardless of how the value got there.
     candidate_dhcp_cmd = request.form.get(names["cmd_field"], "").strip() or current_app.config[daemon["cmd_key"]]
     candidate_ctrl_cmd  = request.form.get("kea-ctrl-cmd", "").strip()  or current_app.config["KEA_CTRL_CMD"]
@@ -761,102 +890,6 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
         )
         return redirect(url_for(redirect_endpoint, **redirect_kwargs))
 
-    # ── Validate timer fields up front so a bad value never partially
-    # mutates the config before we know the whole submission is clean.
-    timer_fields = TIMER_FIELDS6 if version == "6" else TIMER_FIELDS
-    parsed_timers: Dict[str, int] = {}
-    timer_errors = []
-    for timer in timer_fields:
-        raw_value = request.form.get(timer, "").strip()
-        if not raw_value:
-            continue
-        try:
-            value = int(raw_value)
-        except ValueError:
-            timer_errors.append(f"{timer.replace('-', ' ').title()} must be a whole number.")
-            continue
-        if value < MIN_TIMER_VALUE or value > MAX_TIMER_VALUE:
-            timer_errors.append(
-                f"{timer.replace('-', ' ').title()} must be between {MIN_TIMER_VALUE} and {MAX_TIMER_VALUE}."
-            )
-            continue
-        parsed_timers[timer] = value
-
-    if timer_errors:
-        return render_template("global_settings.html", errors=timer_errors, **_build_global_settings_context(version)), 400
-
-    # ── Normal case: same config file, apply edits and save ──────────────
-    config = load_json(current_config_file, default=_DEFAULT_KEA6_CONFIG if version == "6" else None)
-    if daemon["dhcp_root_key"] not in config: config[daemon["dhcp_root_key"]] = {}
-    dhcp = config[daemon["dhcp_root_key"]]
-
-    if "interfaces-config" in request.form:
-        seen = set()
-        interfaces = []
-        for i in request.form["interfaces-config"].split(","):
-            name = i.strip()
-            if name and name not in seen:
-                seen.add(name)
-                interfaces.append(name)
-        dhcp.setdefault("interfaces-config", {})["interfaces"] = interfaces
-
-    for timer in timer_fields:
-        if timer in parsed_timers:
-            dhcp[timer] = parsed_timers[timer]
-        elif timer in dhcp and not request.form.get(timer):
-            # Clear field if user left it blank (optional timers)
-            if timer in ("renew-timer", "rebind-timer"):
-                dhcp.pop(timer, None)
-
-    if "host-reservation-identifiers" in request.form:
-        identifiers = [
-            i.strip() for i in request.form["host-reservation-identifiers"].split(",") if i.strip()
-        ]
-        if identifiers:
-            dhcp["host-reservation-identifiers"] = identifiers
-        else:
-            # Kea rejects an empty list outright ("syntax error, unexpected ]"),
-            # so "none set" has to be represented by the key being absent. This
-            # field is submitted as a hidden input on the second settings form,
-            # so it arrives empty on saves that have nothing to do with it --
-            # writing [] here used to make one Save click leave the live config
-            # unloadable.
-            dhcp.pop("host-reservation-identifiers", None)
-
-    # DHCPv6-only: server-id (Dhcp6.server-id). Only touched when the field
-    # is present and non-blank — leaving it blank means "let Kea auto-generate
-    # one," not "clear whatever's already there."
-    if version == "6":
-        server_id_type = request.form.get("server-id-type", "").strip()
-        if server_id_type:
-            server_id = dhcp.setdefault("server-id", {})
-            server_id["type"] = server_id_type
-            identifier = request.form.get("server-id-identifier", "").strip()
-            if identifier:
-                server_id["identifier"] = identifier
-
-    # Global option-data: v4 gets DNS/NTP/domain-name, v6 gets its own
-    # namespace (dns-servers/sntp-servers/domain-search).
-    if version == "6":
-        managed_options = {
-            "dns-servers": request.form.get("opt-dns6", "").strip(),
-            "sntp-servers": request.form.get("opt-sntp6", "").strip(),
-            "domain-search": request.form.get("opt-domain-search6", "").strip(),
-        }
-    else:
-        managed_options = {
-            "domain-name-servers": request.form.get("opt-dns", "").strip(),
-            "ntp-servers": request.form.get("opt-ntp", "").strip(),
-            "domain-name": request.form.get("opt-domain", "").strip(),
-        }
-    existing_opts = dhcp.get("option-data", [])
-    # Remove managed options then re-add non-empty ones
-    existing_opts = [o for o in existing_opts if o.get("name") not in managed_options]
-    for name, data in managed_options.items():
-        if data:
-            existing_opts.append({"name": name, "data": data})
-    dhcp["option-data"] = existing_opts
-
     # Runtime EZ-KEA settings (Kea command paths, file paths) — persisted to
     # ez-kea-settings.json. Start from the full merged settings so this
     # version's save never clobbers the other version's persisted fields.
@@ -887,7 +920,7 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
     # Docker-deployment settings (see ez_kea/config.py). Blank is a valid,
     # meaningful value here ("same as the host path/no override") so we
     # only fall back to the prior value when the field is altogether
-    # absent from this POST (i.e. the *other* settings form was submitted).
+    # absent from this POST.
     new_settings[f"{prefix}_config_file_in_container"] = (
         request.form[names["config_file_in_container_field"]].strip()
         if names["config_file_in_container_field"] in request.form
@@ -914,6 +947,10 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
     # actually reads/writes in — writing the host path verbatim there would
     # silently kill Kea's own logging the moment it's applied.
     log_file_path = new_settings[f"{prefix}_log_file_in_container"] or new_settings[f"{prefix}_log_file"]
+
+    config = load_json(current_config_file, default=_DEFAULT_KEA6_CONFIG if version == "6" else None)
+    if daemon["dhcp_root_key"] not in config: config[daemon["dhcp_root_key"]] = {}
+    dhcp = config[daemon["dhcp_root_key"]]
 
     if _dir_exists(log_file_path):
         loggers = dhcp.setdefault("loggers", [])
@@ -963,18 +1000,35 @@ def _save_global_settings_impl(version: str) -> Union[Response, Tuple[str, int]]
 @login_required
 @with_config_lock()
 def save_global_settings() -> Union[Response, Tuple[str, int]]:
-    """Save user-updated DHCPv4 global configuration parameters."""
-    return _save_global_settings_impl("4")
+    """Save user-updated DHCPv4 Kea daemon global parameters."""
+    return _save_dhcp_settings_impl("4")
 
 @system_bp.route("/save-global-settings/<version>", methods=["POST"])
 @login_required
 def save_global_settings_version(version: str) -> Union[Response, Tuple[str, int]]:
-    """Save user-updated global configuration parameters for the given version (4 or 6)."""
+    """Save user-updated Kea daemon global parameters for the given version (4 or 6)."""
     if version not in ("4", "6"):
         return "Unknown DHCP version — must be '4' or '6'", 400
     daemon = _resolve_daemon_config(version)
     with config_lock(daemon["config_file"]):
-        return _save_global_settings_impl(version)
+        return _save_dhcp_settings_impl(version)
+
+@system_bp.route("/save-app-settings", methods=["POST"])
+@login_required
+@with_config_lock()
+def save_app_settings() -> Union[Response, Tuple[str, int]]:
+    """Save user-updated EZ-KEA application settings for DHCPv4."""
+    return _save_app_settings_impl("4")
+
+@system_bp.route("/save-app-settings/<version>", methods=["POST"])
+@login_required
+def save_app_settings_version(version: str) -> Union[Response, Tuple[str, int]]:
+    """Save user-updated EZ-KEA application settings for the given version (4 or 6)."""
+    if version not in ("4", "6"):
+        return "Unknown DHCP version — must be '4' or '6'", 400
+    daemon = _resolve_daemon_config(version)
+    with config_lock(daemon["config_file"]):
+        return _save_app_settings_impl(version)
 
 
 @system_bp.route("/api/system/discover")

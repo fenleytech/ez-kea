@@ -455,7 +455,7 @@ def test_save_global_settings_v6_options_persist(global_settings_app):
     assert opts["dns-servers"] == "2001:4860:4860::8888"
     assert opts["domain-search"] == "home.local"
 
-def test_save_global_settings_v6_repoint_requires_dhcp6_key(global_settings_app, tmp_path):
+def test_save_app_settings_v6_repoint_requires_dhcp6_key(global_settings_app, tmp_path):
     """Regression test mirroring the v4 repoint-safety check: repointing
     DHCP6_CONFIG_FILE at a file that already exists but
     isn't a valid Dhcp6 config must be refused, not silently overwritten."""
@@ -465,7 +465,7 @@ def test_save_global_settings_v6_repoint_requires_dhcp6_key(global_settings_app,
 
     from conftest import login
     client = login(global_settings_app.test_client(), global_settings_app)
-    response = client.post("/save-global-settings/6", data={
+    response = client.post("/save-app-settings/6", data={
         "dhcp6-config-file": str(bad_target),
     })
     assert response.status_code == 302
@@ -474,31 +474,31 @@ def test_save_global_settings_v6_repoint_requires_dhcp6_key(global_settings_app,
         content = json.load(f)
     assert content == {"Dhcp4": {}}
 
-def test_save_global_settings_v4_does_not_clobber_v6_settings(global_settings_app):
-    """Regression test for the settings-file merge bug: saving v4 settings
-    must not wipe out previously-saved v6 settings (and vice versa), since
-    both now live in the same ez-kea-settings.json file."""
+def test_save_app_settings_v4_does_not_clobber_v6_settings(global_settings_app):
+    """Regression test for the settings-file merge bug: saving v4 app
+    settings must not wipe out previously-saved v6 app settings (and vice
+    versa), since both still live in the same ez-kea-settings.json file."""
     import json
     from conftest import login
     client = login(global_settings_app.test_client(), global_settings_app)
 
     # Save a distinctive v6 command first.
-    client.post("/save-global-settings/6", data={"kea-dhcp6-cmd": "/custom/kea-dhcp6"})
-    # Now save v4 settings — must not blank out the v6 command just set.
-    client.post("/save-global-settings", data={"valid-lifetime": "4000"})
+    client.post("/save-app-settings/6", data={"kea-dhcp6-cmd": "/custom/kea-dhcp6"})
+    # Now save v4 app settings — must not blank out the v6 command just set.
+    client.post("/save-app-settings", data={"kea-reload-strategy": "control-socket"})
 
     with open(global_settings_app.config["SETTINGS_FILE"]) as f:
         settings = json.load(f)
     assert settings["kea_dhcp6_cmd"] == "/custom/kea-dhcp6"
 
-def test_save_global_settings_v6_does_not_clobber_v4_settings(global_settings_app):
+def test_save_app_settings_v6_does_not_clobber_v4_settings(global_settings_app):
     import json
     from conftest import login
     client = login(global_settings_app.test_client(), global_settings_app)
 
-    client.post("/save-global-settings", data={"valid-lifetime": "4000"})
+    client.post("/save-app-settings", data={"kea-dhcp4-cmd": "/custom/kea-dhcp4"})
     dhcp4_cmd_before = global_settings_app.config["KEA_DHCP4_CMD"]
-    client.post("/save-global-settings/6", data={"preferred-lifetime": "3000"})
+    client.post("/save-app-settings/6", data={"kea-reload-strategy": "control-socket"})
 
     with open(global_settings_app.config["SETTINGS_FILE"]) as f:
         settings = json.load(f)
@@ -618,16 +618,16 @@ def test_test_config_bare_route_still_targets_v4(client):
     assert response.status_code == 200
 
 
-# ── save-global-settings: command validation, log path validation, repoint ──
+# ── save-app-settings: command validation, log path validation, repoint ──
 
 @pytest.fixture
 def full_app(tmp_path):
     """
-    A more complete fixture for exercising /save-global-settings, which touches
+    A more complete fixture for exercising /save-app-settings, which touches
     settings_manager (SETTINGS_FILE), the leases/log paths, and a real config
     file on disk — unlike the minimal `app` fixture used for test/apply-config.
 
-    save_global_settings() redirects via url_for("main.system.global_settings"),
+    save_app_settings() redirects via url_for("main.system.app_settings"),
     so system_bp needs to be nested under a "main" blueprint exactly like the
     real app factory does (ez_kea/routes/__init__.py), not registered standalone.
     """
@@ -663,43 +663,42 @@ def full_client(full_app):
     from conftest import login
     return login(full_app.test_client(), full_app)
 
-def test_save_settings_rejects_new_malicious_dhcp4_cmd(full_client):
+def test_save_app_settings_rejects_new_malicious_dhcp4_cmd(full_client):
     """The same rejection, via the save-settings form field itself."""
-    response = full_client.post("/save-global-settings", data={"kea-dhcp4-cmd": "/tmp/evil.sh"})
+    response = full_client.post("/save-app-settings", data={"kea-dhcp4-cmd": "/tmp/evil.sh"})
     assert response.status_code == 302  # redirects back with a flashed error, nothing saved
 
-def test_save_settings_unrelated_change_survives_unresolvable_existing_command(full_app, full_client, monkeypatch):
+def test_save_app_settings_unrelated_change_survives_unresolvable_existing_command(full_app, full_client, monkeypatch):
     """
     Regression test: an operator's already-configured kea-dhcp4-cmd/kea-ctrl-cmd
     must NOT be re-validated on every save if the operator isn't touching those
     fields. Otherwise, the moment the previously-valid binary stops resolving
     on this host (e.g. dev machine without Kea installed, PATH change), an
-    unrelated settings change (like updating DNS servers) would be blocked
-    outright — a real usability regression uncovered while manually verifying
-    the 1.1 fix end-to-end.
+    unrelated settings change (like updating the reload strategy) would be
+    blocked outright — a real usability regression uncovered while manually
+    verifying the 1.1 fix end-to-end.
     """
     # Simulate the currently-configured kea-dhcp4/keactrl NOT resolving on this host.
     monkeypatch.setattr("ez_kea.core.security.shutil.which", lambda name: None)
 
-    response = full_client.post("/save-global-settings", data={"opt-dns": "1.1.1.1"})
+    response = full_client.post("/save-app-settings", data={"kea-reload-strategy": "control-socket"})
     assert response.status_code == 302
 
-    with full_app.test_request_context():
-        from ez_kea.core.config_manager import load_json
-        config = load_json(full_app.config["DHCP_CONFIG_FILE"])
-    opts = {o["name"]: o["data"] for o in config["Dhcp4"].get("option-data", [])}
-    assert opts.get("domain-name-servers") == "1.1.1.1"
+    import json
+    with open(full_app.config["SETTINGS_FILE"]) as f:
+        settings = json.load(f)
+    assert settings["kea_reload_strategy"] == "control-socket"
 
-def test_save_settings_rejects_new_malicious_log_file(full_client):
+def test_save_app_settings_rejects_new_malicious_log_file(full_client):
     """An out-of-tree log path must be rejected via the save-settings form field."""
-    response = full_client.post("/save-global-settings", data={"dhcp-log-file": "/etc/passwd"})
+    response = full_client.post("/save-app-settings", data={"dhcp-log-file": "/etc/passwd"})
     assert response.status_code == 302  # redirects back with a flashed error, nothing saved
 
     with full_client.session_transaction() as sess:
         flashes = dict(sess.get("_flashes", []))
     assert any("outside the allowed log directories" in msg for msg in flashes.values())
 
-def test_save_settings_repoint_does_not_overwrite_new_target(full_app, full_client, tmp_path):
+def test_save_app_settings_repoint_does_not_overwrite_new_target(full_app, full_client, tmp_path):
     """
     Repointing dhcp-config-file to a fresh path in the same request that saves
     other settings must NOT also write the old config's content over that new
@@ -709,29 +708,28 @@ def test_save_settings_repoint_does_not_overwrite_new_target(full_app, full_clie
     canary.write_text("original victim content — must not be touched")
 
     response = full_client.post(
-        "/save-global-settings",
-        data={"dhcp-config-file": str(canary), "opt-dns": "9.9.9.9"},
+        "/save-app-settings",
+        data={"dhcp-config-file": str(canary), "kea-docker-container": "should-not-persist"},
     )
     assert response.status_code == 302
     # The repoint is flagged invalid because the target isn't parseable Kea JSON,
     # so the canary's content must be completely untouched.
     assert canary.read_text() == "original victim content — must not be touched"
 
-def test_save_settings_repoint_to_nonexistent_path_is_pure_pointer_switch(full_app, full_client, tmp_path):
+def test_save_app_settings_repoint_to_nonexistent_path_is_pure_pointer_switch(full_app, full_client, tmp_path):
     """A repoint to a path that doesn't exist yet (first-time setup) must not carry over old content."""
     new_path = tmp_path / "brand_new_kea_dir" / "kea-dhcp4.conf"
 
     response = full_client.post(
-        "/save-global-settings",
-        data={"dhcp-config-file": str(new_path), "opt-dns": "9.9.9.9"},
+        "/save-app-settings",
+        data={"dhcp-config-file": str(new_path), "kea-docker-container": "should-not-persist"},
     )
     assert response.status_code == 302
     assert new_path.exists()  # bootstrap_config wrote a fresh skeleton
 
-    with full_app.test_request_context():
-        from ez_kea.core.config_manager import load_json
-        config = load_json(str(new_path))
-    # The unrelated opt-dns edit from this same request must NOT have been
-    # applied to the new file — repoint is a distinct action.
-    opts = {o["name"]: o["data"] for o in config["Dhcp4"].get("option-data", [])}
-    assert "domain-name-servers" not in opts
+    import json
+    with open(full_app.config["SETTINGS_FILE"]) as f:
+        settings = json.load(f)
+    # The unrelated kea-docker-container edit from this same request must NOT
+    # have been applied — repoint is a distinct action.
+    assert settings.get("kea_docker_container", "") != "should-not-persist"

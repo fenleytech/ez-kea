@@ -67,14 +67,33 @@
 
             <ul class="navbar-nav">
                 <li><a href="{{ url_for('main.system.index') }}" class="nav-link"><i data-lucide="home"></i> Home</a></li>
-                <li><a href="{{ url_for('main.dhcp4.pools') }}" class="nav-link"><i data-lucide="network"></i> DHCPv4</a></li>
-                <li><a href="{{ url_for('main.dhcp6.pools6') }}" class="nav-link"><i data-lucide="globe"></i> DHCPv6</a></li>
-                <li><a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv4 Reservations</a></li>
-                <li><a href="{{ url_for('main.dhcp6.reservations6') }}" class="nav-link"><i data-lucide="hard-drive"></i> IPv6 Reservations</a></li>
-                <li><a href="{{ url_for('main.dhcp4.leases') }}" class="nav-link"><i data-lucide="list"></i> IPv4 Leases</a></li>
-                <li><a href="{{ url_for('main.dhcp6.leases6') }}" class="nav-link"><i data-lucide="list"></i> IPv6 Leases</a></li>
+
+                <li class="nav-dropdown">
+                    <button type="button" class="nav-link nav-dropdown-btn" id="navIpv4Btn" onclick="toggleNavMenu('navIpv4Menu', 'navIpv4Btn', event)">
+                        <i data-lucide="network"></i> IPv4 <i data-lucide="chevron-down" class="chevron"></i>
+                    </button>
+                    <div class="navbar-dropdown nav-dropdown-menu" id="navIpv4Menu">
+                        <a href="{{ url_for('main.system.global_settings') }}" class="navbar-dropdown-item"><i data-lucide="settings"></i> Settings</a>
+                        <a href="{{ url_for('main.dhcp4.pools') }}" class="navbar-dropdown-item"><i data-lucide="folder-tree"></i> Pools</a>
+                        <a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="navbar-dropdown-item"><i data-lucide="hard-drive"></i> Reservations</a>
+                        <a href="{{ url_for('main.dhcp4.leases') }}" class="navbar-dropdown-item"><i data-lucide="list"></i> Leases</a>
+                    </div>
+                </li>
+
+                <li class="nav-dropdown">
+                    <button type="button" class="nav-link nav-dropdown-btn" id="navIpv6Btn" onclick="toggleNavMenu('navIpv6Menu', 'navIpv6Btn', event)">
+                        <i data-lucide="globe"></i> IPv6 <i data-lucide="chevron-down" class="chevron"></i>
+                    </button>
+                    <div class="navbar-dropdown nav-dropdown-menu" id="navIpv6Menu">
+                        <a href="{{ url_for('main.system.global_settings_version', version='6') }}" class="navbar-dropdown-item"><i data-lucide="settings"></i> Settings</a>
+                        <a href="{{ url_for('main.dhcp6.pools6') }}" class="navbar-dropdown-item"><i data-lucide="folder-tree"></i> Pools</a>
+                        <a href="{{ url_for('main.dhcp6.reservations6') }}" class="navbar-dropdown-item"><i data-lucide="hard-drive"></i> Reservations</a>
+                        <a href="{{ url_for('main.dhcp6.leases6') }}" class="navbar-dropdown-item"><i data-lucide="list"></i> Leases</a>
+                    </div>
+                </li>
+
                 <li><a href="{{ url_for('main.ha.high_availability') }}" class="nav-link"><i data-lucide="shield-check"></i> HA</a></li>
-                <li><a href="{{ url_for('main.system.global_settings') }}" class="nav-link"><i data-lucide="settings"></i> Settings</a></li>
+                <li><a href="{{ url_for('main.system.app_settings') }}" class="nav-link"><i data-lucide="settings"></i> Global Settings</a></li>
                 <li><a href="{{ url_for('main.system.logs') }}" class="nav-link"><i data-lucide="terminal"></i> Log Search</a></li>
             </ul>
         </div>
@@ -134,29 +153,40 @@
         // Initialize Lucide icons
         lucide.createIcons();
 
-        function toggleAccountMenu(e) {
+        // All navbar dropdowns (account menu, IPv4, IPv6) share this one
+        // open/close/outside-click/Escape behavior — opening one closes the
+        // others, rather than three copies of the same click-toggle logic.
+        const NAV_MENU_IDS = ['navAccountMenu', 'navIpv4Menu', 'navIpv6Menu'];
+        const NAV_BTN_IDS = ['navAccountBtn', 'navIpv4Btn', 'navIpv6Btn'];
+
+        function closeAllNavMenus() {
+            NAV_MENU_IDS.forEach(id => document.getElementById(id)?.classList.remove('open'));
+            NAV_BTN_IDS.forEach(id => document.getElementById(id)?.classList.remove('open'));
+        }
+
+        function toggleNavMenu(menuId, btnId, e) {
             e.stopPropagation();
-            document.getElementById('navAccountMenu').classList.toggle('open');
-            document.getElementById('navAccountBtn').classList.toggle('open');
+            const menu = document.getElementById(menuId);
+            const btn = document.getElementById(btnId);
+            const wasOpen = menu.classList.contains('open');
+            closeAllNavMenus();
+            if (!wasOpen) {
+                menu.classList.add('open');
+                btn.classList.add('open');
+            }
+        }
+
+        function toggleAccountMenu(e) {
+            toggleNavMenu('navAccountMenu', 'navAccountBtn', e);
         }
 
         document.addEventListener('click', function (e) {
-            const menu = document.getElementById('navAccountMenu');
-            const btn = document.getElementById('navAccountBtn');
-            if (!menu || !btn) return;
-            if (!e.target.closest('#navAccountMenu') && !e.target.closest('#navAccountBtn')) {
-                menu.classList.remove('open');
-                btn.classList.remove('open');
-            }
+            if (e.target.closest(NAV_MENU_IDS.concat(NAV_BTN_IDS).map(id => '#' + id).join(', '))) return;
+            closeAllNavMenus();
         });
 
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                const menu = document.getElementById('navAccountMenu');
-                const btn = document.getElementById('navAccountBtn');
-                if (menu) menu.classList.remove('open');
-                if (btn) btn.classList.remove('open');
-            }
+            if (e.key === 'Escape') closeAllNavMenus();
         });
     </script>
     {% block scripts %}{% endblock %}
