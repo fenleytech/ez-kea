@@ -2,87 +2,180 @@
 
 {% block title %}Home - EZ-KEA{% endblock %}
 
+{% macro util_bar(pct, small=False) %}
+{% if pct is not none %}
+{% set bar_width = 0 if pct <= 0 else (pct if pct >= 2 else 2) %}
+{% set fill_class = 'util-danger' if pct >= 90 else ('util-warn' if pct >= 70 else '') %}
+<div class="util-bar-track{{ ' util-bar-track-sm' if small else '' }}">
+  <div class="util-bar-fill {{ fill_class }}" style="width: {{ bar_width }}%;"></div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro pool_group(group) %}
+{% if group.subnets|length > 1 %}
+<details class="pool-group">
+  <summary class="pool-group-summary">
+    <span class="pool-group-name"><i data-lucide="layers" style="width:14px;height:14px;"></i> {{ group.name }}</span>
+    <span class="pool-group-pct">{{ group.pct_text }}</span>
+  </summary>
+  {{ util_bar(group.pct) }}
+  <div class="pool-group-subnets">
+    {% for s in group.subnets %}
+    <div>
+      <div class="pool-subnet-row">
+        <span>{{ s.subnet }}</span>
+        <span>{{ s.pct_text }}</span>
+      </div>
+      {{ util_bar(s.pct, small=True) }}
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% else %}
+<div class="pool-group">
+  <div class="pool-group-summary" style="cursor: default;">
+    <span class="pool-group-name">{{ group.name or group.subnets[0].subnet }}</span>
+    <span class="pool-group-pct">{{ group.pct_text }}</span>
+  </div>
+  {{ util_bar(group.pct) }}
+</div>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="page-header">
   <h1><i data-lucide="server" class="feature-icon"></i> Welcome to EZ-KEA</h1>
 </div>
 
-{% include 'config_buttons.html' %}
-
-<div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+<div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.5rem;">
+  <div class="card">
     <div class="card-header">
-      <h2><i data-lucide="settings"></i> IPv4 Settings</h2>
+      <h2><i data-lucide="network"></i> IPv4</h2>
+      <span class="badge {{ 'badge-success' if ha4_enabled else 'badge-neutral' }}">HA {{ 'Enabled' if ha4_enabled else 'Disabled' }}</span>
     </div>
-    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <p>Configure global DHCP settings such as default lease times, interfaces, and reservation identifiers.</p>
-        <br>
+    <div class="card-body">
+      <div class="pool-groups-list">
+        {% for group in pools4 %}
+        {{ pool_group(group) }}
+        {% else %}
+        <div class="text-secondary" style="font-size: 0.8rem;">No pools configured.</div>
+        {% endfor %}
       </div>
-      <a href="{{ url_for('main.system.global_settings') }}" class="btn btn-outline" style="width: 100%;">
-        <i data-lucide="settings"></i> Manage Settings
-      </a>
+      <div class="stat-row" style="margin-bottom: 1.25rem;">
+        <div>
+          <div class="stat-label">Active Leases</div>
+          <div class="stat-value">{{ '{:,}'.format(lease4) }}</div>
+        </div>
+        <div>
+          <div class="stat-label">Reservations</div>
+          <div class="stat-value">{{ '{:,}'.format(reservation4) }}</div>
+        </div>
+        <div>
+          <div class="stat-label">Subnets</div>
+          <div class="stat-value">{{ '{:,}'.format(subnet4) }}</div>
+        </div>
+        <div>
+          <div class="stat-label">Daemon</div>
+          <div class="stat-value">
+            {% if demo4 %}
+            <span class="badge badge-neutral" title="No live Kea daemon found for this version — running in demo mode."><i data-lucide="flask-conical" style="width:12px;height:12px;vertical-align:middle;"></i> Demo Mode</span>
+            {% else %}
+            <span class="badge badge-neutral" id="daemon-status-4"><i data-lucide="loader" style="width:12px;height:12px;vertical-align:middle;"></i> Checking</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a href="{{ url_for('main.system.global_settings') }}" class="btn btn-outline btn-sm"><i data-lucide="settings"></i> Settings</a>
+        <a href="{{ url_for('main.dhcp4.pools') }}" class="btn btn-outline btn-sm"><i data-lucide="folder-tree"></i> Pools</a>
+        <a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="btn btn-outline btn-sm"><i data-lucide="hard-drive"></i> Reservations</a>
+        <a href="{{ url_for('main.dhcp4.leases') }}" class="btn btn-outline btn-sm"><i data-lucide="list"></i> Leases</a>
+      </div>
     </div>
   </div>
 
-  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
+  <div class="card">
     <div class="card-header">
-      <h2><i data-lucide="network"></i> DHCPv4 Pools Management</h2>
+      <h2><i data-lucide="globe"></i> IPv6</h2>
+      <span class="badge {{ 'badge-success' if ha6_enabled else 'badge-neutral' }}">HA {{ 'Enabled' if ha6_enabled else 'Disabled' }}</span>
     </div>
-    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <p>View and manage DHCPv4 pools. Add, edit, or delete DHCP pools and subnets.</p>
-        <br>
+    <div class="card-body">
+      <div class="pool-groups-list">
+        {% for group in pools6 %}
+        {{ pool_group(group) }}
+        {% else %}
+        <div class="text-secondary" style="font-size: 0.8rem;">No pools configured.</div>
+        {% endfor %}
       </div>
-      <a href="{{ url_for('main.dhcp4.pools') }}" class="btn btn-outline" style="width: 100%;">
-        <i data-lucide="folder-tree"></i> View v4 Pools
-      </a>
-    </div>
-  </div>
-
-  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
-    <div class="card-header">
-      <h2><i data-lucide="globe"></i> DHCPv6 Pools Management</h2>
-    </div>
-    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <p>View and manage DHCPv6 pools. Add, edit, or delete DHCPv6 subnets and Prefix Delegations.</p>
-        <br>
+      <div class="stat-row" style="margin-bottom: 1.25rem;">
+        <div>
+          <div class="stat-label">Active Leases</div>
+          <div class="stat-value">{{ '{:,}'.format(lease6) }}</div>
+        </div>
+        <div>
+          <div class="stat-label">Reservations</div>
+          <div class="stat-value">{{ '{:,}'.format(reservation6) }}</div>
+        </div>
+        <div>
+          <div class="stat-label">Subnets</div>
+          <div class="stat-value">{{ '{:,}'.format(subnet6) }}</div>
+        </div>
+        <div>
+          <div class="stat-label">Daemon</div>
+          <div class="stat-value">
+            {% if demo6 %}
+            <span class="badge badge-neutral" title="No live Kea daemon found for this version — running in demo mode."><i data-lucide="flask-conical" style="width:12px;height:12px;vertical-align:middle;"></i> Demo Mode</span>
+            {% else %}
+            <span class="badge badge-neutral" id="daemon-status-6"><i data-lucide="loader" style="width:12px;height:12px;vertical-align:middle;"></i> Checking</span>
+            {% endif %}
+          </div>
+        </div>
       </div>
-      <a href="{{ url_for('main.dhcp6.pools6') }}" class="btn btn-outline" style="width: 100%;">
-        <i data-lucide="folder-tree"></i> View v6 Pools
-      </a>
-    </div>
-  </div>
-
-  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
-    <div class="card-header">
-      <h2><i data-lucide="hard-drive"></i> IPv4 Reservations</h2>
-    </div>
-    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <p>Manage static MAC reservations. Assign specific IP addresses to critical devices.</p>
-        <br>
+      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a href="{{ url_for('main.system.global_settings_version', version='6') }}" class="btn btn-outline btn-sm"><i data-lucide="settings"></i> Settings</a>
+        <a href="{{ url_for('main.dhcp6.pools6') }}" class="btn btn-outline btn-sm"><i data-lucide="folder-tree"></i> Pools</a>
+        <a href="{{ url_for('main.dhcp6.reservations6') }}" class="btn btn-outline btn-sm"><i data-lucide="hard-drive"></i> Reservations</a>
+        <a href="{{ url_for('main.dhcp6.leases6') }}" class="btn btn-outline btn-sm"><i data-lucide="list"></i> Leases</a>
       </div>
-      <a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="btn btn-outline" style="width: 100%;">
-        <i data-lucide="clipboard-list"></i> View Reservations
-      </a>
-    </div>
-  </div>
-
-  <div class="card" style="display: flex; flex-direction: column; height: 100%;">
-    <div class="card-header">
-      <h2><i data-lucide="list"></i> Active IPv4 Leases</h2>
-    </div>
-    <div class="card-body" style="flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <p>Monitor current active leases issued by the server and their expiration times.</p>
-        <br>
-      </div>
-      <a href="{{ url_for('main.dhcp4.leases') }}" class="btn btn-outline" style="width: 100%;">
-        <i data-lucide="activity"></i> View Leases
-      </a>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function checkDaemonStatus(version) {
+    var badge = document.getElementById('daemon-status-' + version);
+    var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+    fetch('{{ url_for("main.system.api_daemon_status", version="VERSION") }}'.replace('VERSION', version), {
+        headers: { 'X-CSRFToken': csrfToken }
+    })
+        .then(r => r.json())
+        .then(body => {
+            if (body.status === 'running') {
+                badge.className = 'badge badge-success';
+                badge.innerHTML = '<i data-lucide="check-circle" style="width:12px;height:12px;vertical-align:middle;"></i> Running';
+            } else if (body.status === 'not_configured') {
+                badge.className = 'badge badge-neutral';
+                badge.title = body.message || '';
+                badge.innerHTML = '<i data-lucide="minus-circle" style="width:12px;height:12px;vertical-align:middle;"></i> Not Configured';
+            } else {
+                badge.className = 'badge badge-danger';
+                badge.title = body.message || '';
+                badge.innerHTML = '<i data-lucide="alert-triangle" style="width:12px;height:12px;vertical-align:middle;"></i> Unreachable';
+            }
+            lucide.createIcons();
+        })
+        .catch(() => {
+            badge.className = 'badge badge-danger';
+            badge.innerHTML = '<i data-lucide="alert-triangle" style="width:12px;height:12px;vertical-align:middle;"></i> Unreachable';
+            lucide.createIcons();
+        });
+}
+
+{% if not demo4 %}checkDaemonStatus('4');{% endif %}
+{% if not demo6 %}checkDaemonStatus('6');{% endif %}
+</script>
 {% endblock %}

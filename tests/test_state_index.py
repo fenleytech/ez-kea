@@ -353,3 +353,29 @@ def test_index_stats_counts_rows(populated):
     assert stats["lease4"] == 3
     assert stats["reservation4"] == 1
     assert stats["last_ingest"] is not None
+
+
+def test_active_lease_counts_by_subnet_excludes_expired_and_declined(populated):
+    """Only "active-host" (state 0, not yet expired) should count — the
+    homepage's per-pool utilization bars would otherwise inflate usage with
+    leases that aren't actually holding an address anymore."""
+    counts = si.active_lease_counts_by_subnet(populated, "lease4")
+    assert counts == {"10.0.0.0/24": 1}
+
+
+def test_active_lease_counts_by_subnet_excludes_prefix_delegation(paths, config, conn):
+    """lease6 rows of lease_type IA_PD (2) hand out delegated prefixes, not
+    addresses — they must not be counted against a subnet's address-pool
+    utilization, the same distinction _pool_capacity draws by skipping
+    pd-pools when computing capacity."""
+    write_csv(paths["lease6"], LEASE6_HEADER, [
+        ["2001:db8::5", "00:01:00:01:aa:bb:cc:dd:ee:ff", "4000", str(int(time.time()) + 3600), "1", "3000",
+         "0", "1", "", "0", "0", "na-host", "", "0", "", ""],
+        ["2001:db8:1::", "00:01:00:01:aa:bb:cc:dd:ee:ff", "4000", str(int(time.time()) + 3600), "1", "3000",
+         "2", "2", "56", "0", "0", "pd-host", "", "0", "", ""],
+    ])
+    write_config6(paths["config6"], subnets=[{"id": 1, "subnet": "2001:db8::/64"}])
+    si.ingest_all(config, conn, kinds=["lease6"])
+
+    counts = si.active_lease_counts_by_subnet(conn, "lease6")
+    assert counts == {"2001:db8::/64": 1}

@@ -389,6 +389,128 @@ tbody tr:hover {
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
+.badge-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger-red);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.badge-neutral {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+/* Dashboard stat tiles (homepage, log-index coverage) — a label/value pair,
+   several laid out in a row via .stat-row. */
+.stat-row {
+  display: flex;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+/* Pool utilization bar (homepage) — a thin filled track, tiered by color as
+   utilization climbs toward exhaustion (see the pct thresholds in index.html). */
+.util-bar-track {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.util-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.util-bar-fill.util-warn {
+  background: var(--brand-orange);
+}
+
+.util-bar-fill.util-danger {
+  background: var(--danger-red);
+}
+
+.util-bar-track-sm {
+  height: 5px;
+}
+
+/* Pool groups (homepage) — one entry per "Pool" (shared network, or a
+   standalone subnet acting as its own pool). Groups with more than one
+   subnet render as a native <details>/<summary> so expand/collapse needs no
+   JS; single-subnet groups render the same look without the disclosure. */
+.pool-groups-list {
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 1.25rem;
+  padding-right: 0.25rem;
+}
+
+.pool-group {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pool-group:last-child {
+  border-bottom: none;
+}
+
+.pool-group-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+}
+
+.pool-group-summary::marker {
+  color: var(--text-secondary);
+}
+
+.pool-group-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+.pool-group-pct {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.pool-group-subnets {
+  margin-top: 0.6rem;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pool-subnet-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.2rem;
+}
+
 /* Navigation */
 .navbar {
   background: var(--surface-raised);

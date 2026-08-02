@@ -3,6 +3,7 @@
 
 import csv
 import io
+import ipaddress
 import shlex
 import subprocess
 import os
@@ -10,7 +11,7 @@ import json
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from flask_login import login_required
 from flask import (
     Blueprint, render_template, request, redirect, url_for, jsonify, current_app,
@@ -24,6 +25,8 @@ from ..core.config_manager import (
 from ..core.settings_manager import load_settings, save_settings
 from ..core.security import validate_kea_command, validate_log_file_path, InvalidKeaCommandError, InvalidLogPathError
 from ..core.kea_ctrl import send_command, find_unix_socket_path, ControlChannelError
+from ..core import state_index
+from ..core.ha_manager import get_ha_params
 
 system_bp = Blueprint('system', __name__)
 
@@ -191,11 +194,179 @@ def _log_file_for_viewing(version: str = "4") -> str:
         dhcp_key=daemon["dhcp_root_key"], logger_name=daemon["logger_name"],
     )
 
+def _count_subnets(config: Dict[str, Any], dhcp_key: str, subnet_key: str) -> int:
+    """Total subnet count for a DHCP version: standalone subnets plus any
+    nested inside shared networks (mirrors how pools()/pools6() read the
+    same config, just counting instead of rendering)."""
+    dhcp = config.get(dhcp_key, {})
+    count = len(dhcp.get(subnet_key, []))
+    for network in dhcp.get("shared-networks", []):
+        count += len(network.get(subnet_key, []))
+    return count
+
+
+def _pool_size(pool_str: str) -> int:
+    """Address count for one Kea pool string: either "start - end" (how
+    EZ-KEA itself writes pools — see new_subnet()/edit_subnet() in
+    routes/dhcp4.py and dhcp6.py) or bare CIDR (how Kea, or a hand-edited
+    config, might). An unparseable entry contributes 0 rather than failing
+    the whole dashboard over one bad pool."""
+    pool_str = (pool_str or "").strip()
+    try:
+        if "-" in pool_str:
+            start_str, end_str = (p.strip() for p in pool_str.split("-", 1))
+            start = ipaddress.ip_address(start_str)
+            end = ipaddress.ip_address(end_str)
+            return max(0, int(end) - int(start) + 1)
+        return ipaddress.ip_network(pool_str, strict=False).num_addresses
+    except ValueError:
+        return 0
+
+
+def _subnet_pool_capacity(subnet: Dict[str, Any]) -> int:
+    """Total addresses across one subnet's regular address pools.
+    Deliberately excludes DHCPv6 pd-pools (prefix delegation): those hand
+    out prefixes, not individual addresses, a different unit that can't be
+    summed into the same capacity figure."""
+    return sum(_pool_size(pool.get("pool", "")) for pool in subnet.get("pools", []))
+
+
+def _utilization_pct(used: int, capacity: int) -> Optional[float]:
+    """Percentage of pool capacity currently leased, or None when no pools
+    are configured at all (division has nothing meaningful to report)."""
+    if capacity <= 0:
+        return None
+    return min(100.0, (used / capacity) * 100)
+
+
+def _format_pct(pct: Optional[float]) -> str:
+    """Display text for a utilization percentage. A non-zero figure that
+    rounds to "0.0%" (routine on DHCPv6's enormous address pools) would read
+    as "no leases at all" — flag it as a nonzero sliver instead."""
+    if pct is None:
+        return "No pools configured"
+    if 0 < pct < 0.1:
+        return "<0.1%"
+    return f"{pct:.1f}%"
+
+
+def _subnet_utilization(subnet: Dict[str, Any], lease_counts: Dict[str, int]) -> Dict[str, Any]:
+    """Capacity/used/pct for one subnet, keyed against active-lease counts
+    already grouped by subnet CIDR (state_index.active_lease_counts_by_subnet)."""
+    cidr = subnet.get("subnet", "")
+    capacity = _subnet_pool_capacity(subnet)
+    used = lease_counts.get(cidr, 0)
+    pct = _utilization_pct(used, capacity)
+    return {"subnet": cidr, "capacity": capacity, "used": used, "pct": pct, "pct_text": _format_pct(pct)}
+
+
+def _pool_groups(config: Dict[str, Any], dhcp_key: str, subnet_key: str, lease_counts: Dict[str, int]) -> List[Dict[str, Any]]:
+    """One entry per "Pool" in EZ-KEA's own UI language — a shared network
+    (Kea's `shared-networks`; ISC DHCPD called the same thing a "shared
+    network", effectively a VLAN grouping multiple subnets — see pools.html)
+    or a standalone subnet acting as its own single-subnet pool. Each
+    aggregates its subnet(s)' pool capacity/usage, mirroring exactly how
+    pools()/pools6() already group shared_networks vs standalone_subnets for
+    the Pools page, so the homepage's grouping matches what clicking through
+    to Pools actually shows."""
+    dhcp = config.get(dhcp_key, {})
+    groups: List[Dict[str, Any]] = []
+
+    for network in dhcp.get("shared-networks", []):
+        subnets = [_subnet_utilization(s, lease_counts) for s in network.get(subnet_key, [])]
+        capacity = sum(s["capacity"] for s in subnets)
+        used = sum(s["used"] for s in subnets)
+        pct = _utilization_pct(used, capacity)
+        groups.append({
+            "name": network.get("name") or "Unnamed shared network",
+            "capacity": capacity, "used": used, "pct": pct, "pct_text": _format_pct(pct),
+            "subnets": subnets,
+        })
+
+    for subnet in dhcp.get(subnet_key, []):
+        util = _subnet_utilization(subnet, lease_counts)
+        groups.append({
+            "name": None,  # standalone — template falls back to the subnet CIDR as the label
+            "capacity": util["capacity"], "used": util["used"], "pct": util["pct"], "pct_text": util["pct_text"],
+            "subnets": [util],
+        })
+
+    return groups
+
+
 @system_bp.route("/")
 @login_required
 def index() -> str:
-    """Render the dashboard/index page."""
-    return render_template("index.html")
+    """Render the dashboard/index page: lease/reservation/subnet counts and
+    HA state for both DHCP versions. Counts come from the state index
+    (kept warm by the background indexer — see create_app()) and the Kea
+    config files themselves, both cheap reads; live daemon health is fetched
+    client-side afterwards (see api_daemon_status) so an unreachable socket
+    can't slow down or fail the page render."""
+    conn = state_index.connect(current_app.config["STATE_INDEX_DB"])
+    try:
+        lease_stats = state_index.index_stats(conn)
+        lease_counts4 = state_index.active_lease_counts_by_subnet(conn, "lease4")
+        lease_counts6 = state_index.active_lease_counts_by_subnet(conn, "lease6")
+    finally:
+        conn.close()
+
+    config4 = load_json(current_app.config["DHCP_CONFIG_FILE"])
+    config6 = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
+
+    return render_template(
+        "index.html",
+        lease4=lease_stats.get("lease4", 0),
+        lease6=lease_stats.get("lease6", 0),
+        reservation4=lease_stats.get("reservation4", 0),
+        reservation6=lease_stats.get("reservation6", 0),
+        subnet4=_count_subnets(config4, "Dhcp4", "subnet4"),
+        subnet6=_count_subnets(config6, "Dhcp6", "subnet6"),
+        # One utilization bar per "Pool" (shared network, or a standalone
+        # subnet acting as its own pool — see _pool_groups), each expandable
+        # to its individual subnets. Deliberately not a single aggregate bar:
+        # that would average an exhausted pool against an empty one into a
+        # figure that looks fine.
+        pools4=_pool_groups(config4, "Dhcp4", "subnet4", lease_counts4),
+        pools6=_pool_groups(config6, "Dhcp6", "subnet6", lease_counts6),
+        # Per-version DEMO mode (no live daemon found for that version at
+        # startup — see create_app()'s discover_environment()/discover_environment6()
+        # calls) means there is nothing for a live status-get to ever reach.
+        # The template skips the async fetch and shows a neutral "Demo Mode"
+        # badge instead of a live check that's guaranteed to read as a
+        # (misleading) daemon-down "Unreachable".
+        demo4=current_app.config.get("EZ-KEA_MODE", "LIVE") == "DEMO",
+        demo6=current_app.config.get("EZ-KEA6_MODE", "LIVE") == "DEMO",
+        ha4_enabled=get_ha_params(config4, "Dhcp4") is not None,
+        ha6_enabled=get_ha_params(config6, "Dhcp6") is not None,
+    )
+
+
+@system_bp.route("/api/daemon-status/<version>")
+@login_required
+def api_daemon_status(version: str) -> Union[Response, Tuple[Response, int]]:
+    """Live DHCPv4/DHCPv6 daemon status via `status-get` on the daemon's own
+    control socket, for the homepage's async health badge. Fetched
+    client-side (not baked into index()'s render) so a slow or unreachable
+    socket can't hold up the rest of the dashboard."""
+    if version not in ("4", "6"):
+        return _invalid_version_response()
+    daemon = _resolve_daemon_config(version)
+    config = load_json(daemon["config_file"], default=_DEFAULT_KEA6_CONFIG if version == "6" else None)
+    socket_path = find_unix_socket_path(config, daemon["dhcp_root_key"])
+    if not socket_path:
+        # Distinct from "unreachable": plenty of installs use the keactrl/
+        # SIGHUP reload strategy and never configure a control socket at all
+        # (see _reload_via_control_socket, which treats this the same way) —
+        # that's a normal, unconfigured state, not a daemon that's down.
+        return jsonify({"status": "not_configured", "message": "No control socket configured."})
+    try:
+        response = send_command(socket_path, "status-get")
+    except ControlChannelError as e:
+        return jsonify({"status": "unreachable", "message": str(e)})
+    if response.get("result") != 0:
+        return jsonify({"status": "unreachable", "message": response.get("text", "Command failed.")})
+    return jsonify({"status": "running", "message": "OK"})
 
 def _invalid_version_response() -> Tuple[Response, int]:
     return jsonify({"error": "Unknown DHCP version — must be '4' or '6'"}), 400

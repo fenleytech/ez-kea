@@ -944,6 +944,22 @@ def index_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     return stats
 
 
+def active_lease_counts_by_subnet(conn: sqlite3.Connection, kind: str, now: Optional[float] = None) -> Dict[str, int]:
+    """Active lease counts grouped by subnet CIDR, for the homepage's
+    per-subnet pool utilization bars. `kind` is "lease4" or "lease6"; lease6
+    excludes IA_PD (prefix delegation) rows -- those consume delegated
+    prefixes, not individual addresses, the same distinction
+    routes/system.py's _pool_capacity draws when it skips pd-pools."""
+    table = _TABLE_NAMES[kind]
+    now = int(now if now is not None else time.time())
+    where = "state = 0 AND expire > ?"
+    params: List[Any] = [now]
+    if kind == "lease6":
+        where += " AND lease_type != 2"
+    rows = conn.execute(f"SELECT subnet, COUNT(*) AS n FROM {table} WHERE {where} GROUP BY subnet", params).fetchall()
+    return {row["subnet"]: row["n"] for row in rows if row["subnet"]}
+
+
 # ---------------------------------------------------------------------------
 # Wiring into the app
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 
 import json
 import os
+import time
 import pytest
 from flask import Flask
 from unittest.mock import patch, mock_open
@@ -733,3 +734,273 @@ def test_save_app_settings_repoint_to_nonexistent_path_is_pure_pointer_switch(fu
     # The unrelated kea-docker-container edit from this same request must NOT
     # have been applied — repoint is a distinct action.
     assert settings.get("kea_docker_container", "") != "should-not-persist"
+
+
+# --- Homepage dashboard -------------------------------------------------
+
+@pytest.fixture
+def dashboard_app(tmp_path):
+    """A fully-wired app (create_app, all blueprints registered — the
+    dashboard template links into dhcp4/dhcp6/ha routes) with a real
+    STATE_INDEX_DB, for exercising the homepage."""
+    from ez_kea import create_app
+
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text("{}")
+
+    app = create_app(config_overrides={
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/test.db",
+    })
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["SETTINGS_FILE"] = str(settings_file)
+
+    config_file = tmp_path / "kea-dhcp4.conf"
+    config_file.write_text('{"Dhcp4": {"shared-networks": [], "subnet4": [{"id": 1, "subnet": "10.0.0.0/24"}]}}')
+    app.config["DHCP_CONFIG_FILE"] = str(config_file)
+    app.config["BACKUP_DIR"] = str(tmp_path / "backups")
+    app.config["DHCP_LEASES_FILE"] = str(tmp_path / "leases.csv")
+    app.config["DHCP_LOG_FILE"] = str(tmp_path / "kea.log")
+
+    config6_file = tmp_path / "kea-dhcp6.conf"
+    config6_file.write_text('{"Dhcp6": {"shared-networks": []}}')
+    app.config["DHCP6_CONFIG_FILE"] = str(config6_file)
+    app.config["DHCP6_LEASES_FILE"] = str(tmp_path / "leases6.csv")
+    app.config["DHCP6_LOG_FILE"] = str(tmp_path / "kea6.log")
+
+    app.config["STATE_INDEX_DB"] = str(tmp_path / "stateindex.db")
+    yield app
+
+@pytest.fixture
+def dashboard_client(dashboard_app):
+    from conftest import login
+    return login(dashboard_app.test_client(), dashboard_app)
+
+
+def test_index_renders_dashboard_stats(dashboard_client):
+    """The homepage renders with lease/reservation/subnet counts for both
+    DHCP versions, not the old static link-tile grid.
+
+    The dashboard_app fixture starts from an empty settings.json, so
+    discover_environment() classifies it DEMO for both versions (same as any
+    fresh sandbox with no real Kea found) — the dashboard must show the
+    static "Demo Mode" badge rather than kick off a live daemon check that
+    can only ever fail in this environment.
+    """
+    response = dashboard_client.get("/")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Active Leases" in body
+    assert "IPv4" in body and "IPv6" in body
+    assert body.count("Demo Mode") == 2
+    assert "daemon-status-4" not in body
+    assert "daemon-status-6" not in body
+
+
+def test_index_shows_live_daemon_check_when_not_demo_mode(dashboard_client, dashboard_app):
+    """A LIVE-mode install (real Kea config found for that version) must get
+    the async daemon-status badge + client-side fetch, not the demo one."""
+    dashboard_app.config["EZ-KEA_MODE"] = "LIVE"
+    dashboard_app.config["EZ-KEA6_MODE"] = "LIVE"
+
+    response = dashboard_client.get("/")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "daemon-status-4" in body
+    assert "daemon-status-6" in body
+    assert "Demo Mode" not in body
+
+
+def test_index_renders_with_no_state_index_yet(dashboard_client, dashboard_app):
+    """A brand-new install has no state-index DB file on disk yet — the
+    dashboard must still render (state_index.connect() creates it) rather
+    than 500ing on a fresh deployment."""
+    assert not os.path.exists(dashboard_app.config["STATE_INDEX_DB"])
+    response = dashboard_client.get("/")
+    assert response.status_code == 200
+
+
+def test_api_daemon_status_not_configured_without_control_socket(dashboard_client):
+    """No control socket configured (the fixture's config files have none) —
+    a normal state for keactrl/SIGHUP-reload installs, distinct from a
+    configured-but-unreachable daemon, so it must NOT read as 'unreachable'."""
+    response = dashboard_client.get("/api/daemon-status/4")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "not_configured"
+
+
+def test_api_daemon_status_unreachable_with_configured_but_dead_socket(dashboard_client, dashboard_app):
+    """A control socket IS configured but nothing is listening — this is the
+    real 'daemon down' case and must read as 'unreachable', not blend in with
+    the normal not-configured state above."""
+    config_file = dashboard_app.config["DHCP_CONFIG_FILE"]
+    with open(config_file, "w") as f:
+        json.dump({
+            "Dhcp4": {
+                "shared-networks": [],
+                "subnet4": [{"id": 1, "subnet": "10.0.0.0/24"}],
+                "control-sockets": [{
+                    "socket-type": "unix",
+                    "socket-name": str(dashboard_app.config["BACKUP_DIR"]) + "/no-such-daemon.sock",
+                }],
+            }
+        }, f)
+
+    response = dashboard_client.get("/api/daemon-status/4")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "unreachable"
+
+
+def test_api_daemon_status_rejects_bad_version(dashboard_client):
+    response = dashboard_client.get("/api/daemon-status/9")
+    assert response.status_code == 400
+
+
+# --- Pool utilization -----------------------------------------------------
+
+from ez_kea.core.state_index import connect as state_index_connect
+from ez_kea.routes.system import (
+    _pool_size, _subnet_pool_capacity, _subnet_utilization, _pool_groups,
+    _utilization_pct, _format_pct,
+)
+
+
+@pytest.mark.parametrize("pool_str,expected", [
+    ("192.168.1.100 - 192.168.1.199", 100),
+    ("192.168.1.100-192.168.1.100", 1),
+    ("192.168.1.0/30", 4),  # bare CIDR, e.g. a hand-edited config
+    ("2001:db8::100 - 2001:db8::1ff", 256),
+    ("not a pool", 0),
+    ("", 0),
+])
+def test_pool_size(pool_str, expected):
+    assert _pool_size(pool_str) == expected
+
+
+def test_subnet_pool_capacity_excludes_pd_pools():
+    """Prefix-delegation pools hand out prefixes, not addresses — a
+    different unit that must not get summed into the address capacity."""
+    subnet = {
+        "subnet": "2001:db8::/64",
+        "pools": [{"pool": "2001:db8::10 - 2001:db8::19"}],  # 10
+        "pd-pools": [{"prefix": "2001:db8:1::", "prefix-len": 48, "delegated-len": 56}],
+    }
+    assert _subnet_pool_capacity(subnet) == 10
+
+
+def test_utilization_pct_and_format():
+    assert _utilization_pct(0, 0) is None
+    assert _format_pct(_utilization_pct(0, 0)) == "No pools configured"
+
+    assert _utilization_pct(50, 200) == 25.0
+    assert _format_pct(25.0) == "25.0%"
+
+    # Capped at 100% even if lease count nominally exceeds pool capacity
+    # (stale leases outside a shrunk pool, etc.) — a bar can't render >100%.
+    assert _utilization_pct(300, 200) == 100.0
+
+    # A nonzero but sub-0.1% figure (routine on a huge DHCPv6 pool) must not
+    # collapse to "0.0%", which would read as "no leases at all".
+    assert _format_pct(_utilization_pct(1, 10_000_000)) == "<0.1%"
+
+
+def test_subnet_utilization_keys_lease_counts_by_cidr():
+    subnet = {"subnet": "10.0.0.0/24", "pools": [{"pool": "10.0.0.10 - 10.0.0.19"}]}  # capacity 10
+    util = _subnet_utilization(subnet, {"10.0.0.0/24": 5, "10.9.9.0/24": 999})
+    assert util == {"subnet": "10.0.0.0/24", "capacity": 10, "used": 5, "pct": 50.0, "pct_text": "50.0%"}
+
+
+def test_pool_groups_one_entry_per_shared_network_and_standalone_subnet():
+    """Matches how pools()/pools6() group the Pools page: each shared
+    network is one "Pool" aggregating its subnets, each standalone subnet is
+    its own single-subnet "Pool" — not one flat list of every subnet."""
+    config = {
+        "Dhcp4": {
+            "subnet4": [
+                {"subnet": "10.9.0.0/24", "pools": [{"pool": "10.9.0.10 - 10.9.0.19"}]},  # standalone, capacity 10
+            ],
+            "shared-networks": [
+                {"name": "campus", "subnet4": [
+                    {"subnet": "10.1.0.0/24", "pools": [{"pool": "10.1.0.10 - 10.1.0.29"}]},  # 20
+                    {"subnet": "10.2.0.0/24", "pools": [{"pool": "10.2.0.10 - 10.2.0.29"}]},  # 20
+                ]},
+            ],
+        }
+    }
+    lease_counts = {"10.1.0.0/24": 10, "10.9.0.0/24": 5}
+    groups = _pool_groups(config, "Dhcp4", "subnet4", lease_counts)
+
+    assert len(groups) == 2
+    campus = next(g for g in groups if g["name"] == "campus")
+    assert campus["capacity"] == 40 and campus["used"] == 10 and len(campus["subnets"]) == 2
+
+    standalone = next(g for g in groups if g["name"] is None)
+    assert standalone["capacity"] == 10 and standalone["used"] == 5
+    assert standalone["subnets"] == [{
+        "subnet": "10.9.0.0/24", "capacity": 10, "used": 5, "pct": 50.0, "pct_text": "50.0%",
+    }]
+
+
+def test_pool_groups_unnamed_shared_network_gets_a_fallback_label():
+    config = {"Dhcp4": {"shared-networks": [{"subnet4": []}]}}
+    groups = _pool_groups(config, "Dhcp4", "subnet4", {})
+    assert groups[0]["name"] == "Unnamed shared network"
+
+
+def test_index_renders_pool_group_with_expandable_subnets(dashboard_client, dashboard_app):
+    """A shared network with more than one subnet renders as one expandable
+    'Pool' entry, not a flat bar per subnet."""
+    config_file = dashboard_app.config["DHCP_CONFIG_FILE"]
+    with open(config_file, "w") as f:
+        json.dump({
+            "Dhcp4": {
+                "shared-networks": [{"name": "corp-campus", "subnet4": [
+                    {"id": 1, "subnet": "10.0.0.0/24", "pools": [{"pool": "10.0.0.10 - 10.0.0.19"}]},
+                    {"id": 2, "subnet": "10.0.1.0/24", "pools": [{"pool": "10.0.1.10 - 10.0.1.19"}]},
+                ]}],
+                "subnet4": [],
+            }
+        }, f)
+
+    response = dashboard_client.get("/")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "corp-campus" in body
+    assert "10.0.0.0/24" in body and "10.0.1.0/24" in body
+    assert "<details" in body  # expandable, since this group has 2 subnets
+
+
+def test_index_active_lease_counts_flow_into_pool_utilization(dashboard_client, dashboard_app):
+    """An active lease recorded against a subnet in the state index shows up
+    in that subnet's (and its pool's) utilization percentage."""
+    config_file = dashboard_app.config["DHCP_CONFIG_FILE"]
+    with open(config_file, "w") as f:
+        json.dump({
+            "Dhcp4": {
+                "shared-networks": [],
+                "subnet4": [{
+                    "id": 1, "subnet": "10.0.0.0/24",
+                    "pools": [{"pool": "10.0.0.10 - 10.0.0.19"}],  # capacity 10
+                }],
+            }
+        }, f)
+
+    conn = state_index_connect(dashboard_app.config["STATE_INDEX_DB"])
+    conn.execute(
+        "INSERT INTO state_lease4 (id, address, subnet, state, expire) VALUES (1, '10.0.0.10', '10.0.0.0/24', 0, ?)",
+        (int(time.time()) + 3600,),
+    )
+    conn.commit()
+    conn.close()
+
+    response = dashboard_client.get("/")
+    assert response.status_code == 200
+    assert "10.0%" in response.get_data(as_text=True)  # 1 of 10
+
+
+def test_index_shows_no_pools_configured_state(dashboard_client):
+    """The fixture's default config has subnets but no pools at all — the
+    dashboard must show the neutral empty state, not a 0/0 crash."""
+    response = dashboard_client.get("/")
+    assert response.status_code == 200
+    assert "No pools configured" in response.get_data(as_text=True)
