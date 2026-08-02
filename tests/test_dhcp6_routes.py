@@ -534,3 +534,212 @@ def test_deleting_a_grouped_subnet_leaves_standalone_ones_alone(app, client):
     assert dhcp6["shared-networks"][0]["subnet6"] == []
     assert [s["subnet"] for s in dhcp6["subnet6"]] == ["2001:db8:66:10::/64"], \
         "the standalone subnet must be untouched"
+
+
+# ── Edit routes ───────────────────────────────────────────────────────────
+
+def _write_shared_network6_config(app, network_name="TestNet6", subnet="2001:db8:50::/64"):
+    _write_v6_config(app, {
+        "shared-networks": [{
+            "name": network_name,
+            "subnet6": [{
+                "id": 1, "subnet": subnet,
+                "pools": [{"pool": "2001:db8:50::100 - 2001:db8:50::1ff"}],
+                "reservations": [],
+            }],
+        }],
+        "subnet6": [],
+    })
+
+def test_edit_shared_network6_get_prefills_name(app, client):
+    _write_shared_network6_config(app)
+    response = client.get("/edit-shared-network6?shared-network-name=TestNet6")
+    assert response.status_code == 200
+    assert b"TestNet6" in response.data
+
+def test_edit_shared_network6_get_not_found_redirects(client):
+    response = client.get("/edit-shared-network6?shared-network-name=NoSuchNet6")
+    assert response.status_code == 302
+
+def test_edit_shared_network6_post_renames_in_place(app, client):
+    _write_shared_network6_config(app)
+    response = client.post("/edit-shared-network6", data={
+        "original-shared-network-name": "TestNet6",
+        "shared-network-name": "RenamedNet6",
+    })
+    assert response.status_code == 302
+
+    dhcp6 = _read_v6_config(app)
+    networks = dhcp6["shared-networks"]
+    assert len(networks) == 1
+    assert networks[0]["name"] == "RenamedNet6"
+    assert networks[0]["subnet6"][0]["subnet"] == "2001:db8:50::/64"
+
+def test_edit_shared_network6_post_rejects_collision_with_another_network(app, client):
+    _write_v6_config(app, {
+        "shared-networks": [
+            {"name": "NetA6", "subnet6": []},
+            {"name": "NetB6", "subnet6": []},
+        ],
+        "subnet6": [],
+    })
+    response = client.post("/edit-shared-network6", data={
+        "original-shared-network-name": "NetA6",
+        "shared-network-name": "NetB6",
+    })
+    assert response.status_code == 400
+    assert b"already exists" in response.data
+
+def test_edit_subnet6_get_prefills_existing_values(app, client):
+    _write_shared_network6_config(app)
+    response = client.get("/edit-subnet6?subnet=2001:db8:50::/64&shared-network-name=TestNet6")
+    assert response.status_code == 200
+    assert b"2001:db8:50::100" in response.data
+
+def test_edit_subnet6_get_not_found_redirects(client):
+    response = client.get("/edit-subnet6?subnet=2001:db8:zz::/64")
+    assert response.status_code == 302
+
+def test_edit_subnet6_post_updates_na_pool_in_place(app, client):
+    _write_shared_network6_config(app)
+    response = client.post("/edit-subnet6", data={
+        "subnet": "2001:db8:50::/64",
+        "shared-network-name": "TestNet6",
+        "pool-start": "2001:db8:50::200",
+        "pool-end": "2001:db8:50::2ff",
+    })
+    assert response.status_code == 302
+
+    dhcp6 = _read_v6_config(app)
+    subnet_obj = dhcp6["shared-networks"][0]["subnet6"][0]
+    assert subnet_obj["pools"] == [{"pool": "2001:db8:50::200 - 2001:db8:50::2ff"}]
+    assert subnet_obj["subnet"] == "2001:db8:50::/64"  # untouched
+    assert subnet_obj["id"] == 1
+
+def test_edit_subnet6_post_cannot_change_cidr(app, client):
+    _write_shared_network6_config(app)
+    client.post("/edit-subnet6", data={
+        "subnet": "2001:db8:50::/64",
+        "shared-network-name": "TestNet6",
+        "pool-start": "2001:db8:50::200",
+        "pool-end": "2001:db8:50::2ff",
+    })
+    dhcp6 = _read_v6_config(app)
+    assert dhcp6["shared-networks"][0]["subnet6"][0]["subnet"] == "2001:db8:50::/64"
+
+def test_edit_subnet6_post_adds_pd_pool(app, client):
+    _write_shared_network6_config(app)
+    response = client.post("/edit-subnet6", data={
+        "subnet": "2001:db8:50::/64",
+        "shared-network-name": "TestNet6",
+        "pd-pool": "2001:db8:51::/48",
+        "pd-length": "64",
+    })
+    assert response.status_code == 302
+
+    dhcp6 = _read_v6_config(app)
+    subnet_obj = dhcp6["shared-networks"][0]["subnet6"][0]
+    assert subnet_obj["pd-pools"] == [{"prefix": "2001:db8:51::/48", "delegated-len": 64}]
+
+def test_edit_subnet6_post_invalid_pd_length_returns_form_error(app, client):
+    _write_shared_network6_config(app)
+    response = client.post("/edit-subnet6", data={
+        "subnet": "2001:db8:50::/64",
+        "shared-network-name": "TestNet6",
+        "pd-pool": "2001:db8:51::/48",
+        "pd-length": "999999",
+    })
+    assert response.status_code == 400
+    assert b"must be between 1 and 128" in response.data
+
+def test_edit_reservation6_get_prefills_existing_values(app, client):
+    _seed_standalone_subnet6(app)
+    client.post("/new-reservation6", data={
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "hostname": "laptop-01",
+        "ip-address": "2001:db8:aa::50",
+    })
+    response = client.get("/edit-reservation6?duid=00:03:00:01:aa:bb:cc:dd:ee:ff&subnet=2001:db8:aa::/64")
+    assert response.status_code == 200
+    assert b"2001:db8:aa::50" in response.data
+    assert b"laptop-01" in response.data
+
+def test_edit_reservation6_get_not_found_redirects(client):
+    response = client.get("/edit-reservation6?duid=00:00:00:00:00:00&subnet=2001:db8:aa::/64")
+    assert response.status_code == 302
+
+def test_edit_reservation6_post_updates_in_place(app, client):
+    _seed_standalone_subnet6(app)
+    client.post("/new-reservation6", data={
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "hostname": "laptop-01",
+        "ip-address": "2001:db8:aa::50",
+    })
+    response = client.post("/edit-reservation6", data={
+        "original-duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:00",  # typo fix
+        "hostname": "renamed-laptop",
+        "ip-address": "2001:db8:aa::51",
+    })
+    assert response.status_code == 302
+
+    with open(app.config["DHCP6_CONFIG_FILE"]) as f:
+        config = json.load(f)
+    reservations = config["Dhcp6"]["subnet6"][0]["reservations"]
+    assert len(reservations) == 1
+    assert reservations[0]["duid"] == "00:03:00:01:aa:bb:cc:dd:ee:00"
+    assert reservations[0]["hostname"] == "renamed-laptop"
+    assert reservations[0]["ip-addresses"] == ["2001:db8:aa::51"]
+
+def test_edit_reservation6_post_switching_to_prefix_only_clears_addresses(app, client):
+    """Editing a reservation from an address to a prefix (or vice versa)
+    must not leave a stale key behind from the previous type."""
+    _seed_standalone_subnet6(app)
+    client.post("/new-reservation6", data={
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "hostname": "router-01",
+        "ip-address": "2001:db8:aa::50",
+    })
+    response = client.post("/edit-reservation6", data={
+        "original-duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "hostname": "router-01",
+        "prefix": "2001:db8:bb::/56",
+    })
+    assert response.status_code == 302
+
+    with open(app.config["DHCP6_CONFIG_FILE"]) as f:
+        config = json.load(f)
+    reservation = config["Dhcp6"]["subnet6"][0]["reservations"][0]
+    assert reservation["prefixes"] == ["2001:db8:bb::/56"]
+    assert "ip-addresses" not in reservation
+
+def test_edit_reservation6_post_duid_collision_with_another_reservation_rejected(app):
+    _seed_standalone_subnet6(app)
+    client = login(app.test_client(), app)
+    client.post("/new-reservation6", data={
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "hostname": "one",
+        "ip-address": "2001:db8:aa::50",
+    })
+    client.post("/new-reservation6", data={
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:00",
+        "hostname": "two",
+        "ip-address": "2001:db8:aa::51",
+    })
+    response = client.post("/edit-reservation6", data={
+        "original-duid": "00:03:00:01:aa:bb:cc:dd:ee:ff",
+        "subnet": "2001:db8:aa::/64",
+        "duid": "00:03:00:01:aa:bb:cc:dd:ee:00",  # collides with the other reservation
+        "hostname": "one",
+        "ip-address": "2001:db8:aa::50",
+    })
+    assert response.status_code == 400
+    assert b"already exists" in response.data
