@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/kea-2.x%20%7C%203.x-blue.svg" alt="Supports ISC Kea 2.x and 3.x">
-  <a href="#development"><img src="https://img.shields.io/badge/tests-403-brightgreen.svg" alt="403 tests"></a>
+  <a href="#development"><img src="https://img.shields.io/badge/tests-432-brightgreen.svg" alt="432 tests"></a>
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
 </p>
 
@@ -219,7 +219,7 @@ Tagged releases are on the [Releases page](https://github.com/fenleytech/ez-kea/
 
 ## Development
 
-**403 unit and route tests**, running with no Kea install and no network access:
+**432 unit and route tests**, running with no Kea install and no network access:
 
 ```bash
 pip install -r requirements.txt

@@ -3,7 +3,7 @@
 
 from typing import Any, Dict, Optional, Union, Tuple
 from flask_login import login_required
-from flask import Blueprint, render_template, request, redirect, url_for, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_ipv4_address, has_overlap, return_available_ips, get_active_leases, sanitize_hostname
@@ -94,6 +94,45 @@ def delete_shared_network() -> Response:
         ]
         save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
         
+    return redirect(url_for('main.dhcp4.pools'))
+
+@dhcp4_bp.route("/edit-shared-network", methods=["GET", "POST"])
+@login_required
+@with_config_lock()
+def edit_shared_network() -> Union[str, Response, Tuple[str, int]]:
+    """Rename an existing DHCPv4 shared network in place."""
+    config = load_json(current_app.config["DHCP_CONFIG_FILE"])
+    errors = []
+
+    if request.method == "GET":
+        shared_network_name = request.args.get("shared-network-name")
+        network = next((net for net in config.get("Dhcp4", {}).get("shared-networks", [])
+                         if net.get("name") == shared_network_name), None)
+        if network is None:
+            flash("Shared network not found.", "danger")
+            return redirect(url_for("main.dhcp4.pools"))
+        return render_template("new_shared_network.html", errors=errors, editing=True, original_name=shared_network_name)
+
+    original_name = request.form.get("original-shared-network-name")
+    shared_network_name = request.form.get("shared-network-name")
+    networks = config.get("Dhcp4", {}).get("shared-networks", [])
+    network = next((net for net in networks if net.get("name") == original_name), None)
+
+    if not shared_network_name:
+        errors.append("Shared network name is required.")
+    elif network is None:
+        errors.append("Shared network was not found in the configuration.")
+    else:
+        for net in networks:
+            if net is not network and net.get("name") == shared_network_name:
+                errors.append(f"Shared network '{shared_network_name}' already exists.")
+                break
+
+    if errors:
+        return render_template("new_shared_network.html", errors=errors, editing=True, original_name=original_name), 400
+
+    network["name"] = shared_network_name
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for('main.dhcp4.pools'))
 
 @dhcp4_bp.route("/new-subnet", methods=["GET", "POST"])
@@ -192,6 +231,85 @@ def delete_subnet() -> Response:
     save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp4.pools"))
 
+@dhcp4_bp.route("/edit-subnet", methods=["GET", "POST"])
+@login_required
+@with_config_lock()
+def edit_subnet() -> Union[str, Response, Tuple[str, int]]:
+    """Edit an existing subnet's gateway, dynamic pool, and static-only
+    setting in place. The subnet's CIDR is locked -- migrating an
+    already-populated subnet to a new address range is a materially
+    different, riskier operation than fixing its gateway or pool."""
+    config = load_json(current_app.config["DHCP_CONFIG_FILE"])
+    errors = []
+
+    if request.method == "GET":
+        subnet = request.args.get("subnet")
+        subnet_obj, shared_network_name = _find_subnet4(config, subnet)
+        if subnet_obj is None:
+            flash("Subnet not found.", "danger")
+            return redirect(url_for("main.dhcp4.pools"))
+
+        current_router = None
+        for option in subnet_obj.get("option-data", []):
+            if option.get("name") == "routers":
+                current_router = option.get("data")
+                break
+
+        static_only = "pools" not in subnet_obj
+        range_start, range_end = "", ""
+        if subnet_obj.get("pools"):
+            pool_str = subnet_obj["pools"][0].get("pool", "")
+            if " - " in pool_str:
+                range_start, range_end = pool_str.split(" - ", 1)
+
+        return render_template(
+            "new_subnet.html", shared_network_name=shared_network_name or "", errors=errors,
+            editing=True, subnet=subnet, current_router=current_router,
+            static_only=static_only, range_start=range_start, range_end=range_end,
+        )
+
+    # POST
+    subnet = request.form.get("subnet")
+    routers = request.form.get("routers")
+    static_only = request.form.get("static-only") == "on"
+    shared_network_name = request.form.get("shared-network-name", "").strip()
+
+    subnet_obj, _ = _find_subnet4(config, subnet)
+    if subnet_obj is None:
+        errors.append(f"Subnet '{subnet}' was not found in the configuration.")
+
+    if not routers:
+        errors.append("Router Address is required.")
+    elif classify_network_address(routers) != 2:
+        errors.append("Router address must be a single IP (e.g., 192.168.1.1).")
+
+    range_start, range_end = None, None
+    if not static_only:
+        range_start = request.form.get("range-start")
+        range_end = request.form.get("range-end")
+        if not range_start or classify_network_address(range_start) != 2:
+            errors.append("Range start is missing or incorrect.")
+        if not range_end or classify_network_address(range_end) != 2:
+            errors.append("Range end is missing or incorrect.")
+        if range_start and range_end and subnet and not validate_ip_range(subnet, range_start, range_end):
+            errors.append("Invalid IP range. Please ensure the range is within the subnet and start_ip < end_ip.")
+
+    if errors:
+        return render_template(
+            "new_subnet.html", shared_network_name=shared_network_name, errors=errors,
+            editing=True, subnet=subnet, current_router=routers,
+            static_only=static_only, range_start=range_start or "", range_end=range_end or "",
+        ), 400
+
+    subnet_obj["option-data"] = [{"name": "routers", "data": routers}] if routers else []
+    if static_only:
+        subnet_obj.pop("pools", None)
+    else:
+        subnet_obj["pools"] = [{"pool": f"{range_start} - {range_end}"}]
+
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
+    return redirect(url_for("main.dhcp4.pools"))
+
 
 def _next_subnet_id(config: Dict[str, Any]) -> int:
     """Return the next available subnet ID across all subnets."""
@@ -203,6 +321,18 @@ def _next_subnet_id(config: Dict[str, Any]) -> int:
         for s in net.get("subnet4", []):
             used.add(s.get("id", 0))
     return max(used, default=0) + 1
+
+def _find_reservation4(config: Dict[str, Any], hw_address: str, subnet: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Locate a MAC reservation by hw-address within a specific subnet.
+    Returns (subnet_obj, reservation_obj); either is None if the subnet
+    itself, or the reservation within it, can't be found."""
+    subnet_obj, _ = _find_subnet4(config, subnet)
+    if subnet_obj is None:
+        return None, None
+    for reservation in subnet_obj.get("reservations", []):
+        if reservation.get("hw-address") == hw_address:
+            return subnet_obj, reservation
+    return subnet_obj, None
 
 def _mac_reservation_sort_key(reservation: Dict[str, Any]) -> Tuple[int, Any]:
     """Sort key for reservation listing. Valid IPv4 addresses sort
@@ -350,11 +480,9 @@ def delete_reservation() -> Response:
     if subnet:
         # Preferred path: identify the exact subnet (standalone or shared)
         # the reservation lives on.
-        subnet_obj, _ = _find_subnet4(config, subnet)
-        if subnet_obj and "reservations" in subnet_obj:
-            subnet_obj["reservations"] = [
-                res for res in subnet_obj["reservations"] if res.get("hw-address") != hw_address
-            ]
+        subnet_obj, reservation = _find_reservation4(config, hw_address, subnet)
+        if subnet_obj and reservation:
+            subnet_obj["reservations"].remove(reservation)
     elif shared_network_name:
         # Legacy fallback for callers that only supply a shared-network name.
         for network in config.get("Dhcp4", {}).get("shared-networks", []):
@@ -368,6 +496,84 @@ def delete_reservation() -> Response:
 
     save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     state_index.reindex_now(current_app, kinds=["reservation4"])
+    return redirect(url_for("main.dhcp4.mac_reservations"))
+
+@dhcp4_bp.route("/edit-reservation", methods=["GET", "POST"])
+@login_required
+@with_config_lock()
+def edit_reservation() -> Union[str, Response, Tuple[str, int]]:
+    """Edit an existing static MAC reservation in place. The subnet it lives
+    on is locked (it's how the reservation is located); the MAC address
+    itself is editable since typo fixes are a common, low-risk edit."""
+    config = load_json(current_app.config["DHCP_CONFIG_FILE"])
+    subnet_data = return_available_ips(config, current_app.config["DHCP_LEASES_FILE"])
+    errors = []
+
+    if request.method == "GET":
+        hw_address = request.args.get("hw-address")
+        subnet = request.args.get("subnet")
+        subnet_obj, reservation = _find_reservation4(config, hw_address, subnet)
+        if reservation is None:
+            flash("Reservation not found.", "danger")
+            return redirect(url_for("main.dhcp4.mac_reservations"))
+
+        # The reservation's own IP was excluded by return_available_ips()
+        # (it's "reserved" by itself) -- add it back so the edit form can
+        # preselect the value it's already using.
+        current_ip = reservation.get("ip-address")
+        if current_ip and current_ip not in subnet_data.get(subnet, []):
+            subnet_data.setdefault(subnet, []).insert(0, current_ip)
+
+        return render_template(
+            "new_reservation.html", subnet_data=subnet_data, errors=errors,
+            editing=True, subnet=subnet, reservation=reservation,
+        )
+
+    # POST
+    original_hw_address = request.form.get("hw-address")
+    subnet = request.form.get("subnet")
+    ip_address = request.form.get("ip-address")
+    hostname_raw = request.form.get("hostname")
+    mac_address = request.form.get("mac-address")
+
+    if not subnet: errors.append("Subnet is required.")
+    if not ip_address: errors.append("IP address is required.")
+    elif not validate_ipv4_address(ip_address): errors.append("Invalid IPv4 address format for IP address.")
+
+    hostname = sanitize_hostname(hostname_raw) if hostname_raw else ""
+    if not hostname: errors.append("Hostname is required.")
+
+    if not mac_address: errors.append("MAC is required.")
+    elif not validate_mac_address(mac_address): errors.append("Invalid MAC Address format.")
+
+    subnet_obj, reservation = None, None
+    if subnet:
+        subnet_obj, reservation = _find_reservation4(config, original_hw_address, subnet)
+        if subnet_obj is None:
+            errors.append(f"Subnet '{subnet}' was not found in the configuration.")
+        elif reservation is None:
+            errors.append("Reservation was not found in the configuration.")
+
+    if not errors and mac_address != original_hw_address:
+        for other in subnet_obj.get("reservations", []):
+            if other is not reservation and other.get("hw-address") == mac_address:
+                errors.append(f"A reservation with MAC address '{mac_address}' already exists in this subnet.")
+                break
+
+    if errors:
+        fallback_reservation = {"hw-address": mac_address or original_hw_address, "hostname": hostname, "ip-address": ip_address}
+        return render_template(
+            "new_reservation.html", subnet_data=subnet_data, errors=errors,
+            editing=True, subnet=subnet, reservation=fallback_reservation,
+        ), 400
+
+    reservation.update({
+        "hostname": hostname,
+        "hw-address": mac_address,
+        "ip-address": ip_address,
+    })
+
+    save_kea_config(config, current_app.config["DHCP_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp4.mac_reservations"))
 
 @dhcp4_bp.route("/leases")

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}New MAC Reservation - EZ-KEA{% endblock %}
+{% block title %}{{ 'Edit MAC Reservation' if editing else 'New MAC Reservation' }} - EZ-KEA{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1><i data-lucide="plus-circle"></i> Add MAC Reservation</h1>
+  <h1><i data-lucide="{{ 'pencil' if editing else 'plus-circle' }}"></i> {{ 'Edit MAC Reservation' if editing else 'Add MAC Reservation' }}</h1>
   <a href="{{ url_for('main.dhcp4.mac_reservations') }}" class="btn btn-outline">
     <i data-lucide="arrow-left"></i> Back to Reservations
   </a>
@@ -25,25 +25,41 @@
     </div>
     {% endif %}
 
-    <form action="{{ url_for('main.dhcp4.new_reservation') }}" method="POST">
+    <form action="{{ url_for('main.dhcp4.edit_reservation') if editing else url_for('main.dhcp4.new_reservation') }}" method="POST">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if editing %}
+      <input type="hidden" name="hw-address" value="{{ reservation.get('hw-address', '') }}">
+      {% endif %}
 
       <div class="form-group">
         <label for="subnet" class="form-label">Select Subnet <span style="color: var(--danger-red);">*</span></label>
+        {% if editing %}
+        <input type="hidden" name="subnet" value="{{ subnet }}">
+        <input type="text" class="form-control" id="subnet-display" value="{{ subnet }}" disabled style="opacity: 0.7;">
+        {% else %}
         <select class="form-control" id="subnet" name="subnet" required>
           <option value="" disabled selected>-- Select a Subnet --</option>
           {% for subnet, ips in subnet_data.items() %}
           <option value="{{ subnet }}">{{ subnet }}</option>
           {% endfor %}
         </select>
+        {% endif %}
       </div>
 
       <div class="form-group">
         <label for="ip-address" class="form-label">Available IP Address <span
             style="color: var(--danger-red);">*</span></label>
+        {% if editing %}
+        <select class="form-control" id="ip-address" name="ip-address" required>
+          {% for ip in subnet_data.get(subnet, []) %}
+          <option value="{{ ip }}" {% if ip==reservation.get('ip-address' ) %}selected{% endif %}>{{ ip }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
         <select class="form-control" id="ip-address" name="ip-address" required disabled>
           <option value="" disabled selected>-- Select an IP --</option>
         </select>
+        {% endif %}
       </div>
 
       <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
@@ -53,7 +69,7 @@
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             <i data-lucide="hash" style="color: var(--text-secondary); width: 16px; height: 16px;"></i>
             <input type="text" class="form-control" id="mac-address" name="mac-address" placeholder="00:1A:2B:3C:4D:5E"
-              required>
+              value="{{ reservation.get('hw-address', '') if editing else '' }}" required>
           </div>
         </div>
 
@@ -62,7 +78,7 @@
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             <i data-lucide="monitor" style="color: var(--text-secondary); width: 16px; height: 16px;"></i>
             <input type="text" class="form-control" id="hostname" name="hostname" placeholder="e.g. webserver-01"
-              required>
+              value="{{ reservation.get('hostname', '') if editing else '' }}" required>
           </div>
         </div>
       </div>
@@ -71,13 +87,14 @@
 
       <div style="display: flex; justify-content: flex-end;">
         <button type="submit" class="btn btn-primary">
-          <i data-lucide="check"></i> Create Reservation
+          <i data-lucide="check"></i> {{ 'Save Changes' if editing else 'Create Reservation' }}
         </button>
       </div>
     </form>
   </div>
 </div>
 
+{% if not editing %}
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const subnetData = {{ subnet_data | tojson | safe
@@ -103,4 +120,5 @@
   });
     });
 </script>
+{% endif %}
 {% endblock %}
