@@ -690,6 +690,31 @@ def test_save_app_settings_unrelated_change_survives_unresolvable_existing_comma
         settings = json.load(f)
     assert settings["kea_reload_strategy"] == "control-socket"
 
+def test_save_app_settings_does_not_duplicate_logger_output_options(full_app, full_client):
+    """
+    Regression test: saving global settings (here, just the reload strategy --
+    nothing subnet-related) against the skeleton's own default "kea-dhcp4"
+    logger must not leave it with both a pre-existing key and a second,
+    differently-spelled key for the same setting. Kea's own parser treats
+    "output_options" and "output-options" as the same parameter and refuses
+    to load a config with both present in one logger -- see
+    AUDIT_FINDINGS.md, 2026-08-02, where this broke a real config's syntax
+    check after a settings save. An empty file forces load_json() to fall
+    back to the skeleton, which already carries the "kea-dhcp4" logger this
+    save path has to match by name.
+    """
+    open(full_app.config["DHCP_CONFIG_FILE"], "w").close()
+
+    response = full_client.post("/save-app-settings", data={"kea-reload-strategy": "control-socket"})
+    assert response.status_code == 302
+
+    with open(full_app.config["DHCP_CONFIG_FILE"]) as f:
+        written = json.load(f)
+    loggers = written["Dhcp4"]["loggers"]
+    assert len(loggers) == 1
+    assert "output-options" in loggers[0]
+    assert "output_options" not in loggers[0]
+
 def test_save_app_settings_rejects_new_malicious_log_file(full_client):
     """An out-of-tree log path must be rejected via the save-settings form field."""
     response = full_client.post("/save-app-settings", data={"dhcp-log-file": "/etc/passwd"})

@@ -8,7 +8,7 @@ from unittest.mock import patch, mock_open
 from ez_kea.core.config_manager import (
     load_json, save_json, extract_log_file_from_config, extract_log_file_from_config6,
     bootstrap_config, bootstrap_config6, copy_file, to_legacy_control_socket,
-    _DEFAULT_KEA_CONFIG, _DEFAULT_KEA6_CONFIG
+    ConfigAccessError, _DEFAULT_KEA_CONFIG, _DEFAULT_KEA6_CONFIG
 )
 
 @pytest.fixture
@@ -28,12 +28,14 @@ def test_save_and_load_json(temp_config_file):
     assert load_json(temp_config_file) == data
 
 def test_extract_log_file_from_config(temp_config_file):
-    # Save a config with a specific log path
-    custom_config = dict(_DEFAULT_KEA_CONFIG)
+    # Save a config with a specific log path. Deep-copied so this can't leak
+    # into the shared module-level skeleton the way a shallow dict(...) would.
+    import copy
+    custom_config = copy.deepcopy(_DEFAULT_KEA_CONFIG)
     custom_config["Dhcp4"]["loggers"] = [
         {
             "name": "kea-dhcp4",
-            "output_options": [{"output": "/custom/path.log"}]
+            "output-options": [{"output": "/custom/path.log"}]
         }
     ]
     save_json(custom_config, temp_config_file)
@@ -120,10 +122,65 @@ def test_load_json_default_when_missing_v4_unchanged(temp_config_file):
 def test_load_json_v6_default_when_missing(temp_config6_file):
     assert load_json(temp_config6_file, default=_DEFAULT_KEA6_CONFIG) == _DEFAULT_KEA6_CONFIG
 
-def test_load_json_v6_default_on_corrupt_file(temp_config6_file):
+def test_load_json_raises_on_corrupt_existing_file(temp_config6_file):
+    """
+    A file that exists and has content but fails to parse must raise, not
+    silently hand back the skeleton. Silently falling back here is exactly
+    the bug that let a real Kea config get overwritten by an empty skeleton
+    on first save -- see AUDIT_FINDINGS.md, 2026-08-02.
+    """
     with open(temp_config6_file, "w") as f:
         f.write("{not valid json")
+    with pytest.raises(ConfigAccessError):
+        load_json(temp_config6_file, default=_DEFAULT_KEA6_CONFIG)
+
+
+def test_load_json_empty_file_still_uses_default(temp_config6_file):
+    """An empty (0-byte) file is the legitimate "nothing here yet" case --
+    e.g. a freshly touch'd file before bootstrap runs -- and must still fall
+    back to the skeleton rather than raising."""
+    open(temp_config6_file, "w").close()
     assert load_json(temp_config6_file, default=_DEFAULT_KEA6_CONFIG) == _DEFAULT_KEA6_CONFIG
+
+
+@pytest.mark.parametrize("comment_style", [
+    "// line comment\n",
+    "# shell-style comment\n",
+    "/* block\n   comment */\n",
+])
+def test_load_json_strips_kea_style_comments(temp_config_file, comment_style):
+    """ISC's own shipped Kea configs are full of these -- Kea's parser
+    accepts them, plain json.loads() does not."""
+    content = (
+        comment_style +
+        '{ "Dhcp4": { "subnet4": [{"id": 1, "subnet": "10.0.0.0/24"}] } }'
+    )
+    with open(temp_config_file, "w") as f:
+        f.write(content)
+    result = load_json(temp_config_file)
+    assert result["Dhcp4"]["subnet4"][0]["subnet"] == "10.0.0.0/24"
+
+
+def test_load_json_comment_stripping_ignores_slashes_in_strings(temp_config_file):
+    """A string value containing "//" (e.g. a URL) must survive intact --
+    the comment stripper must track string-literal state, not just scan for
+    the first "//" on a line."""
+    content = '{ "Dhcp4": { "boot-file-name": "http://example.com/x" } }'
+    with open(temp_config_file, "w") as f:
+        f.write(content)
+    result = load_json(temp_config_file)
+    assert result["Dhcp4"]["boot-file-name"] == "http://example.com/x"
+
+
+def test_load_json_fallback_is_a_deep_copy(temp_config_file):
+    """Regression for the cross-request poisoning bug: mutating a nested
+    structure of a returned fallback must never mutate the shared
+    module-level skeleton for the next caller. See AUDIT_FINDINGS.md,
+    2026-08-02 -- creating a v4 subnet against a not-yet-existing config
+    permanently corrupted _DEFAULT_KEA_CONFIG in place."""
+    result = load_json(temp_config_file)
+    result["Dhcp4"]["subnet4"].append({"id": 1, "subnet": "10.0.0.0/24"})
+    assert _DEFAULT_KEA_CONFIG["Dhcp4"]["subnet4"] == []
 
 def test_bootstrap_config6(temp_config6_file, temp_backup_dir):
     bootstrap_config6(temp_config6_file, temp_backup_dir)
@@ -209,7 +266,7 @@ def test_extract_log_file_from_config6(temp_config6_file):
     custom_config["Dhcp6"]["loggers"] = [
         {
             "name": "kea-dhcp6",
-            "output_options": [{"output": "/custom/path6.log"}]
+            "output-options": [{"output": "/custom/path6.log"}]
         }
     ]
     save_json(custom_config, temp_config6_file)

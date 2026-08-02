@@ -83,6 +83,316 @@ support, and DHCPv6 — have since been implemented.
 
 ---
 
+## Findings — 2026-08-02 (live install against ISC's packaged Kea 3.2.0)
+
+Found during a from-scratch install on a fresh Ubuntu 26 VM, following only
+the public docs (README, wiki `Installation.md`, no source reading
+beforehand) with ISC's own `isc-kea-dhcp4`/`isc-kea-dhcp6` 3.2.0 packages —
+i.e. exactly the path the wiki's "Installing Kea" section tells a new user to
+take.
+
+**Status: all four fixed the same day**, verified both by a full pytest pass
+(472 tests, 10 new/updated for these fixes) and by re-running the exact
+failing sequence against the same real Kea 3.2.0 instance that first
+surfaced each bug — the pre-fix corruption/rejection did not recur, and
+`kea-dhcp4 -t` / `kea-dhcp6 -t` / a live control-socket reload all passed
+clean afterward. See the fix notes at the end of each write-up below.
+
+### [CRITICAL] Silent config-parse failure discards the real Kea config on save
+**File:** `ez_kea/core/config_manager.py:130` (`load_json`)
+
+ISC's shipped default `/etc/kea/kea-dhcp4.conf` (and `kea-dhcp6.conf`) is full
+of `//` line comments — Kea's own parser accepts these, but they are not valid
+JSON. `load_json()` calls plain `json.loads()` with no comment-stripping:
+
+```python
+except json.JSONDecodeError:
+    return dict(fallback)   # empty skeleton config, subnet4: [] etc.
+```
+
+The failure is swallowed completely: no exception surfaces, no log line is
+written (checked `journalctl -u ez-kea`, nothing), no banner or warning
+appears anywhere in the UI. The only visible symptom is the Pools page saying
+"No Subnets Configured" and the dashboard reading 0 subnets, even though
+Kea's own startup log says `DHCP4_CONFIG_COMPLETE ... added IPv4 subnets: 1`.
+
+The destructive part: saving **any** settings screen for that family —
+including **Global Settings → Reload Strategy, which has nothing to do with
+subnets** — persists that already-empty in-memory skeleton back over the real
+file on disk. One click on `Save Application Settings` wiped the real
+`subnet4` (ISC's example `192.0.2.0/24`, its pool, and its 6 reservations)
+and rewrote `control-socket` (singular, relative `socket-name`) into a
+fabricated `control-sockets` (plural) block pointing at a made-up absolute
+path that doesn't match the socket Kea is actually listening on — which is
+also the root cause of the dashboard's "Daemon: Unreachable" status, not a
+separate bug.
+
+**Confirmed scope:** only the family whose settings page was saved is
+affected; `kea-dhcp6.conf` was untouched in this session since only the
+DHCPv4 tab was saved. Kea's already-running daemon process keeps serving from
+memory until its next reload/restart, so the blast radius on a live
+deployment is a time bomb: the config is already gone on disk, but service
+doesn't visibly break until the next reload.
+
+**What worked correctly despite this:** the backup-before-write guarantee
+held — a byte-for-byte backup of the original comment-laden file was taken
+immediately before the overwrite (`data/backups/kea-dhcp4.conf.<hash>.bak.<ts>`),
+and using the UI's own **Restore** button put the original file back
+byte-for-byte (verified with `diff`). So the safety net documented in the
+README ("backs up before every write and refuses the write if the backup
+fails") is real and functions correctly — the bug is purely in the read/parse
+path silently treating a valid Kea config as empty rather than in the
+write/backup path.
+
+**Suggested fix direction:** `load_json()` needs to strip Kea's C++-style
+`//` and `/* */` comments before calling `json.loads()` (Kea's own config
+docs describe exactly this comment syntax), and a `JSONDecodeError` on an
+*existing, non-empty* file should be a hard error surfaced to the user
+(refuse to save, show what failed to parse) rather than a silent fallback to
+an empty skeleton that then gets persisted over the real file.
+
+**Fixed** (`ez_kea/core/config_manager.py`): `load_json()` now strips `//`,
+`#`, and `/* */` comments (tracking string-literal state, so a value
+containing `//` like a URL survives) before parsing. A `JSONDecodeError` on
+an existing, non-empty file now raises `ConfigAccessError` — reusing the
+exact mechanism and error-handling path already in place for an unreadable
+file, whose docstring already articulated this exact reasoning — instead of
+silently returning the skeleton. An empty (0-byte) file still falls back to
+the skeleton, since that's the legitimate "nothing here yet" bootstrap case.
+Tests: `test_load_json_strips_kea_style_comments`,
+`test_load_json_comment_stripping_ignores_slashes_in_strings`,
+`test_load_json_raises_on_corrupt_existing_file`,
+`test_load_json_empty_file_still_uses_default` in `tests/test_config_manager.py`;
+`test_load_json_raises_rather_than_returning_skeleton_for_corrupt_files` in
+`tests/test_greenfield_regressions.py`. Re-verified live: restored the
+original comment-laden `kea-dhcp4.conf`/`kea-dhcp6.conf` from their pristine
+backups and repeated the exact save/create actions that corrupted them the
+first time — both files now parse correctly and are left untouched by
+unrelated settings saves.
+
+### [HIGH] Skeleton default config uses the wrong logger key (`output_options` instead of `output-options`), producing a config Kea itself rejects
+**Files:** `ez_kea/core/config_manager.py:68` (v4 skeleton), `:112` (v6
+skeleton), `:256` (`extract_log_file_from_config` reads the same wrong key);
+contrast with `ez_kea/routes/system.py:1132` and `:1143`, which correctly
+write the hyphenated `output-options` when patching in a real log path.
+
+Found immediately downstream of the finding above, while trying to recover:
+after the skeleton (blank due to the comment-parsing bug) was used as the
+base for a newly-created subnet, clicking **Apply Changes** ran Kea's own
+`-t` syntax check and got:
+
+```
+Syntax error in configuration file: Syntax check failed with:
+/etc/kea/kea-dhcp4.conf:54:9: duplicate output-options entries in loggers
+map (previous at /etc/kea/kea-dhcp4.conf:44:9)
+```
+
+Kea's real parameter name is `output-options` (hyphen); `output_options`
+(underscore) is not a Kea 3.x config key at all, but Kea's parser evidently
+still recognizes it as an alias closely enough to flag it as a duplicate
+against a correctly-spelled `output-options` entry in the same logger. The
+skeleton constants in `config_manager.py` (both v4 and v6) hardcode the
+underscore spelling, and `extract_log_file_from_config()` reads that same
+underscore key back out — so the wrong spelling is used consistently
+end-to-end *until* `routes/system.py`'s global-settings save path adds a
+second, correctly-spelled `output-options` key via `logger.setdefault(...)`
+onto the same logger object without checking for (or migrating) the existing
+underscore key. The result is a config with both keys present, which Kea
+refuses to load.
+
+**Confirmed non-impact:** the pre-apply syntax check worked exactly as
+documented and refused to reload the daemon with the broken config — Kea
+kept running its last-known-good configuration throughout. This is a
+correctness/UX bug (a subnet built entirely through the UI cannot be
+applied) rather than a safety-net failure.
+
+**Suggested fix direction:** rename `output_options` to `output-options` in
+both skeleton constants and in `extract_log_file_from_config()`, so the key
+spelling is consistent everywhere and matches what `routes/system.py`
+already writes.
+
+**Note:** `output_options` in `routes/system.py`'s save path was already
+fixed to `output-options` in the 0.9.1 greenfield-install pass two days
+earlier (`1ae1200`) — but that commit only changed the two `setdefault(...)`
+call sites, never the skeleton constants themselves, which still hardcoded
+`output_options`. Since `setdefault("output-options", ...)` only avoids a
+duplicate if a key by that exact name is already present, a logger sourced
+from the (still-wrong) skeleton triggered exactly the bug the prior fix
+believed it had closed. Its own regression suite never covered this because
+none of its new tests exercised the skeleton-fallback path for this logger.
+
+**Fixed** (`ez_kea/core/config_manager.py`): both skeleton constants and
+`extract_log_file_from_config()` now use `output-options` throughout, matching
+what `routes/system.py`'s save path already wrote — so `setdefault()` now
+finds and updates the existing key instead of adding a second one. Test:
+`test_save_app_settings_does_not_duplicate_logger_output_options` in
+`tests/test_system_routes.py`, which forces the skeleton fallback and asserts
+exactly one `output-options` key survives a settings save. Re-verified live
+against the real Kea 3.2.0 instance: `kea-dhcp4 -t` passes clean on the
+resulting file.
+
+### [CRITICAL] Shared mutable skeleton default lets a v4 write leak into the v6 config file (and vice versa)
+**Files:** `ez_kea/core/config_manager.py:130` (`load_json`, `return dict(fallback)`),
+`:44` / `:87` (`_DEFAULT_KEA_CONFIG` / `_DEFAULT_KEA6_CONFIG` module-level
+constants), `ez_kea/routes/dhcp4.py:154` + `:203` (`new_subnet`),
+`ez_kea/routes/dhcp6.py:185` (`new_subnet6`).
+
+This is the most serious finding of the session, found while trying to build
+an IPv6 subnet after already having worked around the two findings above.
+Creating a standalone IPv6 subnet through the UI (subnet + IA_NA pool + PD
+pool, nothing unusual) produced this on Apply:
+
+```
+Syntax error in configuration file: Syntax check failed with:
+/etc/kea/kea-dhcp6.conf:2.3-9: syntax error, unexpected constant string,
+expecting Dhcp6
+```
+
+`cat /etc/kea/kea-dhcp6.conf` afterward showed the file had been overwritten
+with **both** a full `"Dhcp4": {...}` block — complete with the `10.50.0.0/24`
+subnet from the *earlier, unrelated* DHCPv4 test in this same session, and
+even the already-diagnosed duplicate `output_options`/`output-options`
+logger bug from finding #2, which had only been patched on disk by hand and
+never touched again through the app — **and** a `"Dhcp6": {...}` block with
+just the new `subnet6` entry and nothing else Kea6 needs (no
+`control-sockets`, no `lease-database`, no `loggers`). Kea correctly refuses
+a config whose root object isn't `Dhcp6`.
+
+Root cause, traced through the source:
+
+1. `load_json(file_path, default=None)` falls back to the **module-level**
+   constant `_DEFAULT_KEA_CONFIG` (the v4 skeleton) whenever `default` isn't
+   passed, and returns `dict(fallback)` — a **shallow** copy. Nested values
+   (`Dhcp4`, `Dhcp4["subnet4"]`, `Dhcp4["loggers"]`, etc.) are not copied;
+   the returned dict shares the exact same nested list/dict objects as the
+   module constant.
+2. `routes/dhcp4.py:203`, `new_subnet()`'s write path, does
+   `config.setdefault("Dhcp4", {}).setdefault("subnet4", []).append(new_subnet_obj)`.
+   When `config` came from the fallback (as it did earlier in this session,
+   since `kea-dhcp4.conf` still had ISC's `//`-commented default and hit the
+   silent-parse-failure from finding #1), `config["Dhcp4"]["subnet4"]` **is**
+   `_DEFAULT_KEA_CONFIG["Dhcp4"]["subnet4"]` — the same list object. The
+   `.append()` call permanently mutates the shared module-level constant for
+   the remaining lifetime of the process. Every subsequent caller anywhere
+   in the app that falls back to `_DEFAULT_KEA_CONFIG` from then on gets a
+   "skeleton" that is no longer empty — it carries whatever got appended by
+   the last unrelated request that happened to poison it.
+3. `routes/dhcp6.py:185`, `new_subnet6()`, calls `load_json(config_file)`
+   with **no `default=` argument at all** — unlike, e.g., `system.py:1122`,
+   which correctly passes `default=_DEFAULT_KEA6_CONFIG`. So when
+   `kea-dhcp6.conf` (also `//`-commented by default) hit the same silent
+   parse failure, it fell back to `_DEFAULT_KEA_CONFIG` — the **v4** skeleton,
+   already poisoned per step 2 — instead of `_DEFAULT_KEA6_CONFIG`. The v6
+   route then appended the new `subnet6` entry under a `Dhcp6` key inside
+   that borrowed v4-shaped object and wrote the whole thing, Dhcp4 block and
+   all, to `/etc/kea/kea-dhcp6.conf`.
+
+So this is two independent defects compounding: (a) a shared mutable default
+that leaks state across **any** two requests that both hit the silent-parse
+fallback, v4-to-v4 or v6-to-v6, not just across families; and (b) one
+specific call site (`new_subnet6`) that fetches the wrong family's default
+in the first place, which is what turned a same-family leak into a
+cross-family one here. Either defect alone would eventually corrupt a config
+in a busy multi-user deployment; together they did it on the second subnet
+created in a brand new install.
+
+**Confirmed non-impact:** again, Kea's own `-t` syntax check refused to
+reload with this file, so the running daemons were never affected. Backups
+exist for both files and restore correctly (see below).
+
+**Suggested fix direction:** make `load_json`'s fallback return a **deep**
+copy (`copy.deepcopy(fallback)`, or construct the skeleton fresh per call
+instead of module-level literals) so no caller can ever mutate shared state;
+separately, add the missing `default=_DEFAULT_KEA6_CONFIG` to
+`routes/dhcp6.py:185`. Both fixes are needed — the missing default alone
+would still leave same-family leakage between concurrent/sequential
+requests.
+
+**Fixed** (`ez_kea/core/config_manager.py`, `ez_kea/routes/dhcp6.py`,
+`ez_kea/routes/dhcp4.py` was already correct, `ez_kea/routes/ha.py`,
+`ez_kea/routes/options.py`, `ez_kea/routes/system.py`,
+`ez_kea/core/state_index.py`): `load_json()`'s fallback now returns
+`copy.deepcopy(fallback)`, so no caller can mutate the shared module-level
+skeleton no matter what it does with the returned dict. Separately, audited
+**every** `load_json()` call site in the app (there were 10 in `dhcp6.py`
+alone, plus others in `ha.py`, `options.py`, `system.py`, and
+`state_index.py`) and added the missing `default=_DEFAULT_KEA6_CONFIG` to
+each one touching a v6 config file — including
+`system.py`'s `_reload_via_control_socket()`, the function actually behind
+the "Apply Changes" button exercised throughout this session's manual
+testing. Tests: `test_load_json_fallback_is_a_deep_copy` in
+`tests/test_config_manager.py`;
+`test_new_subnet6_against_missing_config_stays_dhcp6_rooted` in
+`tests/test_dhcp6_routes.py`, which reproduces the exact "missing v6 config"
+trigger and asserts no `Dhcp4` key ever appears in the written file.
+Re-verified live: restored the pristine original configs and repeated the
+exact subnet-creation sequence that produced the cross-family leak — the
+resulting `kea-dhcp6.conf` now has only a `Dhcp6` key, the original example
+subnet survives alongside the new one, and `kea-dhcp6 -t` passes clean.
+
+### [CRITICAL] Every DHCPv6 Prefix Delegation pool built through the UI is malformed and Kea rejects it outright
+**Files:** `ez_kea/routes/dhcp6.py:259` (`new_subnet6`), `:409` (`edit_subnet6`).
+
+Found while reconstructing a clean v6 config by hand to work around the two
+findings above — wrote a `pd-pools` entry the same way the UI's own form
+data would produce it, straight from the "PD Pool Subnet" field
+(`2001:db8:51::/48`) with no other transformation:
+
+```python
+new_subnet_obj["pd-pools"] = [{"prefix": pd_pool, "delegated-len": pd_length_int}]
+```
+
+Kea's own syntax check rejects this immediately:
+
+```
+Syntax check failed with: missing parameter 'prefix-len'
+(/etc/kea/kea-dhcp6.conf:29:11) [pd-pools map between ...]
+```
+
+Kea's `pd-pools` schema requires three separate fields: `prefix` (the bare
+base address, e.g. `2001:db8:51::`), `prefix-len` (the length of that base
+prefix, e.g. `48`), and `delegated-len` (the length handed to each
+requesting client, e.g. `56`). The code instead stores the operator's whole
+CIDR input (`2001:db8:51::/48`) verbatim as `prefix` and never derives or
+sets `prefix-len` at all. `edit_subnet6()` (`:409`) has the identical bug,
+and the read-back for the edit form (`:338`) just echoes the same malformed
+string, so editing an existing (also-broken) PD pool doesn't crash, it just
+perpetuates the wrong shape.
+
+**Impact:** this isn't an edge case — it is the only way the UI lets an
+operator create a PD pool at all, so **every** DHCPv6 Prefix Delegation pool
+ever created through EZ-KEA's UI fails Kea's syntax check and cannot be
+applied. Prefix Delegation is one of the features named in the README's "What
+it does" list. The syntax-check gate did its job here too: Kea refused to
+load the bad config and nothing reached the running daemon.
+
+**Suggested fix direction:** split the submitted CIDR with
+`ipaddress.IPv6Network(pd_pool)` (already computed as `pd_pool_network` for
+validation a few lines earlier in both routes, just not reused for this) into
+`str(pd_pool_network.network_address)` for `prefix` and
+`pd_pool_network.prefixlen` for `prefix-len`, and add `prefix-len` to the
+dict literal in both `new_subnet6()` and `edit_subnet6()`.
+
+**Fixed** (`ez_kea/routes/dhcp6.py`): both `new_subnet6()` and
+`edit_subnet6()` now reuse the already-validated `pd_pool_network` to write
+`prefix`/`prefix-len`/`delegated-len` as three separate fields. The edit
+form's GET read-back was also fixed to recombine `prefix` + `prefix-len`
+into the full CIDR string for display, so re-opening an existing PD pool for
+editing shows the complete value instead of a truncated one. The unit test
+that had asserted the broken shape as correct
+(`test_edit_subnet6_post_adds_pd_pool`) now asserts the fixed shape instead,
+plus a new `test_edit_subnet6_get_prefills_pd_pool_with_prefix_len` for the
+read-back and an updated `test_new_subnet6_na_and_pd_pools_coexist` — all in
+`tests/test_dhcp6_routes.py`. This is also the reason none of the **462**
+tests caught it in the first place: nothing in the suite ever validated a
+created PD pool against Kea's real schema, since the containerized testbed
+(the only place real Kea syntax gets checked) never exercised prefix
+delegation at all. Re-verified live: the exact PD pool that failed
+`kea-dhcp6 -t` with "missing parameter 'prefix-len'" now applies and reloads
+successfully against the real Kea 3.2.0 instance.
+
+---
+
 ## TL;DR
 
 > The TL;DR and all sections below describe the codebase **as it was on

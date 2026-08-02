@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Kaleb Fenley
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
+import copy
 import json
 import os
+import re
 import shutil
 import datetime
 import fcntl
@@ -65,7 +67,7 @@ _DEFAULT_KEA_CONFIG = {
         "loggers": [
             {
                 "name": "kea-dhcp4",
-                "output_options": [
+                "output-options": [
                     {
                         "output": "/var/log/kea/kea-dhcp4.log",
                         "maxver": 8,
@@ -109,7 +111,7 @@ _DEFAULT_KEA6_CONFIG = {
         "loggers": [
             {
                 "name": "kea-dhcp6",
-                "output_options": [
+                "output-options": [
                     {
                         "output": "/var/log/kea/kea-dhcp6.log",
                         "maxver": 8,
@@ -127,13 +129,58 @@ _DEFAULT_KEA6_CONFIG = {
 
 from typing import Any, Callable, Dict, Optional, TypeVar, Union
 
+# Kea's config parser accepts C++/shell-style comments that are not valid
+# JSON: "//" and "#" line comments, and "/* */" block comments -- exactly
+# what ISC's own shipped example configs are full of. This strips them while
+# tracking string-literal state, so a value that itself contains "//" (e.g.
+# a URL in boot-file-name) is never touched.
+def _strip_json_comments(text: str) -> str:
+    result = []
+    in_string = False
+    escape = False
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if in_string:
+            result.append(c)
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            result.append(c)
+            i += 1
+            continue
+        if c in "#" or (c == "/" and i + 1 < n and text[i + 1] == "/"):
+            end = text.find("\n", i)
+            if end == -1:
+                break
+            result.append("\n")
+            i = end + 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            end = text.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+            continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+
 def load_json(file_path: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Load and return JSON data from the specified file.
 
-    Uses shared file locks to ensure safety. Returns `default` (the v4 Kea
-    config skeleton unless a caller passes its own, e.g. the v6 skeleton) if
-    the file does not exist or fails to decode.
+    Uses shared file locks to ensure safety. Returns a deep copy of `default`
+    (the v4 Kea config skeleton unless a caller passes its own, e.g. the v6
+    skeleton) if the file does not exist or is empty. Kea's own "//", "#" and
+    "/* */" comments are stripped before parsing, since ISC's shipped configs
+    are full of them and are not valid strict JSON otherwise.
 
     Args:
         file_path (str): The path to the JSON file to load.
@@ -141,7 +188,16 @@ def load_json(file_path: str, default: Optional[Dict[str, Any]] = None) -> Dict[
             to the v4 skeleton for backwards compatibility with existing callers.
 
     Returns:
-        Dict[str, Any]: The loaded JSON dictionary or default skeleton.
+        Dict[str, Any]: The loaded JSON dictionary or a deep copy of the
+            default skeleton.
+
+    Raises:
+        ConfigAccessError: the file exists, has content, and still fails to
+            parse as JSON after stripping comments. Silently handing back an
+            empty skeleton here would make the UI look like the server has no
+            subnets at all, and the operator's next edit would overwrite
+            their real config with that skeleton -- the same reasoning
+            PermissionError below already follows.
     """
     fallback = default if default is not None else _DEFAULT_KEA_CONFIG
     try:
@@ -149,11 +205,8 @@ def load_json(file_path: str, default: Optional[Dict[str, Any]] = None) -> Dict[
             fcntl.flock(file, fcntl.LOCK_SH)
             content = file.read()
             fcntl.flock(file, fcntl.LOCK_UN)
-        return dict(json.loads(content))
-    except json.JSONDecodeError:
-        return dict(fallback)
     except FileNotFoundError:
-        return dict(fallback)
+        return copy.deepcopy(fallback)
     except PermissionError as e:
         # A real config we're not allowed to read -- never fall back to the
         # skeleton here (see ConfigAccessError). Standard Kea packages install
@@ -164,6 +217,21 @@ def load_json(file_path: str, default: Optional[Dict[str, Any]] = None) -> Dict[
             "EZ-KEA runs as needs read and write access to this file — on a "
             "packaged Kea install, add that account to Kea's group "
             "(usually '_kea' or 'kea') and make the file group-writable."
+        ) from e
+
+    if not content.strip():
+        return copy.deepcopy(fallback)
+
+    try:
+        return dict(json.loads(_strip_json_comments(content)))
+    except json.JSONDecodeError as e:
+        raise ConfigAccessError(
+            f"EZ-KEA cannot parse '{file_path}': {e.msg} at line {e.lineno}, "
+            f"column {e.colno} (after stripping Kea's //, #, and /* */ "
+            "comments). The file exists and is not empty, so EZ-KEA is "
+            "refusing to treat it as blank -- fix the syntax error (or "
+            "restore a backup) before EZ-KEA can safely read or write this "
+            "config."
         ) from e
 
 
@@ -246,18 +314,21 @@ def with_config_lock(config_key: str = "DHCP_CONFIG_FILE", default: Optional[str
 def extract_log_file_from_config(config_file: str, default_fallback: str, dhcp_key: str = "Dhcp4", logger_name: str = "kea-dhcp4") -> str:
     """
     Attempts to read the Kea configuration file and extract the log file path
-    from <dhcp_key> -> loggers -> output_options. Falls back to default_fallback.
+    from <dhcp_key> -> loggers -> output-options. Falls back to default_fallback.
     """
-    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG if dhcp_key == "Dhcp6" else None)
     try:
+        config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG if dhcp_key == "Dhcp6" else None)
         loggers = config.get(dhcp_key, {}).get("loggers", [])
         for logger in loggers:
             if logger.get("name") == logger_name:
-                for opt in logger.get("output_options", []):
+                for opt in logger.get("output-options", []):
                     output_path = opt.get("output", "")
                     if output_path and output_path not in ("stdout", "stderr"):
                         return output_path
     except Exception:
+        # Best-effort: this is used to pre-fill a display value, never to
+        # decide whether the config is safe to write, so a ConfigAccessError
+        # here should degrade to the fallback rather than break the page.
         pass
     return default_fallback
 

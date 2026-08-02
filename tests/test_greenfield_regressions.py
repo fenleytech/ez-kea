@@ -53,13 +53,27 @@ def test_load_json_raises_rather_than_returning_skeleton_when_unreadable(tmp_pat
     assert "group" in str(excinfo.value).lower()
 
 
-def test_load_json_still_falls_back_for_missing_and_corrupt_files(tmp_path):
+def test_load_json_still_falls_back_for_missing_files(tmp_path):
     """The pre-existing fallback behaviour must survive the change above."""
     assert "Dhcp4" in load_json(str(tmp_path / "nope.conf"))
 
+
+def test_load_json_raises_rather_than_returning_skeleton_for_corrupt_files(tmp_path):
+    """
+    An existing file that fails to parse must raise for exactly the same
+    reason the unreadable-file test above does: silently handing back the
+    empty skeleton would make the UI look like the server has no subnets,
+    and the operator's next save would overwrite their real config with
+    that skeleton. This is precisely what happened on the same greenfield
+    box this file is named for — ISC's shipped kea-dhcp4.conf is full of
+    "//" comments, which used to trip this exact fallback and got silently
+    persisted over on the very first settings save. See AUDIT_FINDINGS.md,
+    2026-08-02.
+    """
     corrupt = tmp_path / "corrupt.conf"
     corrupt.write_text("{not json at all")
-    assert "Dhcp4" in load_json(str(corrupt))
+    with pytest.raises(ConfigAccessError):
+        load_json(str(corrupt))
 
 
 # ── Every Kea config write takes a backup first ──────────────────────────────

@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union, Tuple
 from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
-from ..core.config_manager import load_json, save_kea_config, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock, _DEFAULT_KEA6_CONFIG
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_duid, has_overlap, return_available_ips, get_active_leases, get_active_leases6, unix_to_human_readable, sanitize_hostname
 from ..core import state_index
 from ..core.csv_export import stream_csv_response
@@ -63,7 +63,7 @@ def _next_subnet6_id(config: Dict[str, Any]) -> int:
 @login_required
 def pools6() -> str:
     """Render the main DHCPv6 pools configuration view."""
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
     dhcp6 = config.get("Dhcp6", {})
     shared_networks = dhcp6.get("shared-networks", [])
     # Top-level Dhcp6.subnet6[] -- subnets not inside any shared network. Kea
@@ -89,7 +89,7 @@ def new_shared_network6() -> Union[str, Response]:
             errors.append("Shared network name is required.")
         else:
             config_file = current_app.config["DHCP6_CONFIG_FILE"]
-            config = load_json(config_file)
+            config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
             if "Dhcp6" not in config: config["Dhcp6"] = {"shared-networks": []}
             if "shared-networks" not in config["Dhcp6"]: config["Dhcp6"]["shared-networks"] = []
             
@@ -113,7 +113,7 @@ def delete_shared_network6() -> Response:
     """Remove a specified shared network from the DHCPv6 configuration."""
     shared_network_name = request.form.get("shared-network-name")
     config_file = current_app.config["DHCP6_CONFIG_FILE"]
-    config = load_json(config_file)
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
     
     if "Dhcp6" in config and "shared-networks" in config["Dhcp6"]:
         config["Dhcp6"]["shared-networks"] = [
@@ -129,7 +129,7 @@ def delete_shared_network6() -> Response:
 def edit_shared_network6() -> Union[str, Response, Tuple[str, int]]:
     """Rename an existing DHCPv6 shared network in place."""
     config_file = current_app.config["DHCP6_CONFIG_FILE"]
-    config = load_json(config_file)
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
     errors = []
 
     if request.method == "GET":
@@ -182,7 +182,7 @@ def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
         pool_end = request.form.get("pool-end") # Standard IA_NA address pool end
 
         config_file = current_app.config["DHCP6_CONFIG_FILE"]
-        config = load_json(config_file)
+        config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
 
         if not subnet:
             errors.append("Subnet is required.")
@@ -256,7 +256,11 @@ def new_subnet6() -> Union[str, Response, Tuple[str, int]]:
             new_subnet_obj["pools"] = [{"pool": f"{pool_start} - {pool_end}"}]
 
         if pd_pool:
-            new_subnet_obj["pd-pools"] = [{"prefix": pd_pool, "delegated-len": pd_length_int}]
+            new_subnet_obj["pd-pools"] = [{
+                "prefix": str(pd_pool_network.network_address),
+                "prefix-len": pd_pool_network.prefixlen,
+                "delegated-len": pd_length_int,
+            }]
 
         dhcp6 = config.setdefault("Dhcp6", {})
         if not shared_network_name:
@@ -289,7 +293,7 @@ def delete_subnet6() -> Response:
     shared_network_name = request.form.get("shared-network-name")
     subnet = request.form.get("subnet")
     config_file = current_app.config["DHCP6_CONFIG_FILE"]
-    config = load_json(config_file)
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
 
     if not shared_network_name:
         # Standalone subnet (Dhcp6.subnet6[]). Without this the delete button on
@@ -316,7 +320,7 @@ def edit_subnet6() -> Union[str, Response, Tuple[str, int]]:
     The subnet's CIDR is locked, same rationale as edit_subnet() in
     dhcp4.py."""
     config_file = current_app.config["DHCP6_CONFIG_FILE"]
-    config = load_json(config_file)
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
     errors = []
 
     if request.method == "GET":
@@ -335,7 +339,9 @@ def edit_subnet6() -> Union[str, Response, Tuple[str, int]]:
         pd_pool, pd_length = "", ""
         if subnet_obj.get("pd-pools"):
             pd = subnet_obj["pd-pools"][0]
-            pd_pool = pd.get("prefix", "")
+            prefix = pd.get("prefix", "")
+            prefix_len = pd.get("prefix-len")
+            pd_pool = f"{prefix}/{prefix_len}" if prefix and prefix_len is not None else prefix
             pd_length = pd.get("delegated-len", "")
 
         return render_template(
@@ -406,7 +412,11 @@ def edit_subnet6() -> Union[str, Response, Tuple[str, int]]:
         subnet_obj.pop("pools", None)
 
     if pd_pool:
-        subnet_obj["pd-pools"] = [{"prefix": pd_pool, "delegated-len": pd_length_int}]
+        subnet_obj["pd-pools"] = [{
+            "prefix": str(pd_pool_network.network_address),
+            "prefix-len": pd_pool_network.prefixlen,
+            "delegated-len": pd_length_int,
+        }]
     else:
         subnet_obj.pop("pd-pools", None)
 
@@ -521,7 +531,7 @@ def reservations6_export() -> Response:
 @with_config_lock("DHCP6_CONFIG_FILE")
 def new_reservation6() -> Union[str, Response, Tuple[str, int]]:
     """Add a new DUID-based reservation for a specific IPv6 address and/or delegated prefix."""
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
     # A free-text subnet field backed by a picker of existing subnets — not a
     # pre-computed available-IP dropdown like v4's return_available_ips();
     # enumerating a /64's host space isn't feasible.
@@ -587,7 +597,7 @@ def delete_reservation6() -> Response:
     one nested inside a shared network."""
     duid = request.form.get("duid")
     subnet = request.form.get("subnet")
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
 
     if subnet:
         subnet_obj, reservation = _find_reservation6(config, duid, subnet)
@@ -606,7 +616,7 @@ def edit_reservation6() -> Union[str, Response, Tuple[str, int]]:
     on is locked (it's how the reservation is located); the DUID itself is
     editable since typo fixes are a common, low-risk edit."""
     config_file = current_app.config["DHCP6_CONFIG_FILE"]
-    config = load_json(config_file)
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG)
     available_subnets = _collect_subnet6_cidrs(config)
     errors = []
 

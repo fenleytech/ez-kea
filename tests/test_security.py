@@ -88,7 +88,7 @@ class TestValidateLogFilePath:
 
     def test_allows_path_matching_config_declared_logger(self, tmp_path):
         config_file = tmp_path / "kea-dhcp4.conf"
-        config_file.write_text('{"Dhcp4": {"loggers": [{"name": "kea-dhcp4", "output_options": [{"output": "/some/declared/path.log"}]}]}}')
+        config_file.write_text('{"Dhcp4": {"loggers": [{"name": "kea-dhcp4", "output-options": [{"output": "/some/declared/path.log"}]}]}}')
         # Even though /some/declared/path.log is outside any allowlisted dir,
         # it's what the config itself already declares, so it must be allowed.
         result = validate_log_file_path("/some/declared/path.log", str(config_file), str(tmp_path / "fallback.log"))

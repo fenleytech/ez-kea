@@ -5,7 +5,7 @@ from typing import Any, Dict, Union, Tuple
 from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
-from ..core.config_manager import load_json, save_kea_config, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock, _DEFAULT_KEA6_CONFIG
 from ..core.validation import validate_option_data
 from .dhcp6 import _find_subnet6
 
@@ -153,7 +153,7 @@ def delete_standalone_subnet4_option(subnet: str) -> Response:
 @with_config_lock("DHCP6_CONFIG_FILE")
 def manage_subnet6_options(shared_network_name: str, subnet: str) -> Union[str, Response, Tuple[str, int]]:
     """Manage DHCPv6 options for a given subnet within a shared network."""
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
 
     target_subnet, found_network_name = _find_subnet6(config, subnet)
     if not target_subnet or found_network_name != shared_network_name:
@@ -197,7 +197,7 @@ def manage_subnet6_options(shared_network_name: str, subnet: str) -> Union[str, 
 def delete_subnet6_option(shared_network_name: str, subnet: str) -> Response:
     """Delete a DHCPv6 option from a specific subnet in a shared network."""
     option_name = request.form.get("option-name")
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
 
     target_subnet, found_network_name = _find_subnet6(config, subnet)
     if target_subnet and found_network_name == shared_network_name and "option-data" in target_subnet:
@@ -214,7 +214,7 @@ def delete_subnet6_option(shared_network_name: str, subnet: str) -> Response:
 @with_config_lock("DHCP6_CONFIG_FILE")
 def manage_standalone_subnet6_options(subnet: str) -> Union[str, Response, Tuple[str, int]]:
     """Options for subnet6s that live directly under Dhcp6 (not in a shared-network)."""
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
 
     target_subnet, found_network_name = _find_subnet6(config, subnet)
     if not target_subnet or found_network_name is not None:
@@ -253,7 +253,7 @@ def manage_standalone_subnet6_options(subnet: str) -> Union[str, Response, Tuple
 def delete_standalone_subnet6_option(subnet: str) -> Response:
     """Delete a DHCPv6 option from a standalone subnet."""
     option_name = request.form.get("option-name")
-    config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
 
     target_subnet, found_network_name = _find_subnet6(config, subnet)
     if target_subnet and found_network_name is None and "option-data" in target_subnet:

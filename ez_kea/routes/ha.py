@@ -14,7 +14,7 @@ from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash, jsonify
 from werkzeug.wrappers import Response
 
-from ..core.config_manager import load_json, save_kea_config, with_config_lock
+from ..core.config_manager import load_json, save_kea_config, with_config_lock, _DEFAULT_KEA6_CONFIG
 from ..core.ha_manager import (
     find_ha_hook, get_ha_params, set_ha_config, remove_ha_config, parse_ha_form,
     DEFAULT_HA_LIBRARY_PATH,
@@ -29,7 +29,7 @@ ha_bp = Blueprint('ha', __name__)
 def high_availability() -> str:
     """Render the High Availability configuration page for DHCPv4 and DHCPv6."""
     config4 = load_json(current_app.config["DHCP_CONFIG_FILE"])
-    config6 = load_json(current_app.config["DHCP6_CONFIG_FILE"])
+    config6 = load_json(current_app.config["DHCP6_CONFIG_FILE"], default=_DEFAULT_KEA6_CONFIG)
     hook4 = find_ha_hook(config4, "Dhcp4")
     hook6 = find_ha_hook(config6, "Dhcp6")
     return render_template(
@@ -43,8 +43,9 @@ def high_availability() -> str:
 
 
 def _save_ha(dhcp_key: str, config_file: str) -> Response:
+    default = _DEFAULT_KEA6_CONFIG if dhcp_key == "Dhcp6" else None
     if request.form.get("ha-enabled") != "on":
-        config = load_json(config_file)
+        config = load_json(config_file, default=default)
         remove_ha_config(config, dhcp_key)
         save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
         flash(f"High Availability disabled for {dhcp_key}.", "info")
@@ -57,7 +58,7 @@ def _save_ha(dhcp_key: str, config_file: str) -> Response:
         return redirect(url_for("main.ha.high_availability"))
 
     library_path, ha_params = result
-    config = load_json(config_file)
+    config = load_json(config_file, default=default)
     set_ha_config(config, library_path, ha_params, dhcp_key)
     save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     flash(f"High Availability configuration saved for {dhcp_key}.", "success")
@@ -81,7 +82,7 @@ def save_ha_config6() -> Response:
 
 
 def _ha_status_response(config_file: str, dhcp_key: str) -> Response:
-    config = load_json(config_file)
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG if dhcp_key == "Dhcp6" else None)
     socket_path = find_unix_socket_path(config, dhcp_key)
     try:
         response = send_command(socket_path, "ha-heartbeat")

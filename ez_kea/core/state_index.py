@@ -560,7 +560,7 @@ def ingest_all(config: Dict[str, Any], conn: sqlite3.Connection, kinds: Optional
     last pass (or all of them, if `kinds` narrows the set -- used by the
     post-save reindex nudge to touch only the reservation table that just
     changed)."""
-    from .config_manager import load_json
+    from .config_manager import load_json, _DEFAULT_KEA6_CONFIG
 
     kinds = set(kinds) if kinds else {"lease4", "lease6", "reservation4", "reservation6"}
     result: Dict[str, bool] = {}
@@ -583,7 +583,7 @@ def ingest_all(config: Dict[str, Any], conn: sqlite3.Connection, kinds: Optional
         fingerprint = f"{_fingerprint(path)}|{_fingerprint(config_path)}"
         result["lease6"] = _ingest_source(
             conn, "lease6", "lease6_fingerprint", fingerprint,
-            lambda: parse_lease6(path, _subnet_id_map(load_json(config_path), "Dhcp6", "subnet6")),
+            lambda: parse_lease6(path, _subnet_id_map(load_json(config_path, default=_DEFAULT_KEA6_CONFIG), "Dhcp6", "subnet6")),
         )
     if "reservation4" in kinds:
         path = config.get("DHCP_CONFIG_FILE", "") or ""
@@ -595,7 +595,7 @@ def ingest_all(config: Dict[str, Any], conn: sqlite3.Connection, kinds: Optional
         path = config.get("DHCP6_CONFIG_FILE", "") or ""
         result["reservation6"] = _ingest_source(
             conn, "reservation6", "reservation6_fingerprint", _fingerprint(path),
-            lambda: parse_reservation6(load_json(path)),
+            lambda: parse_reservation6(load_json(path, default=_DEFAULT_KEA6_CONFIG)),
         )
 
     _set_meta(conn, "last_ingest", str(time.time()))

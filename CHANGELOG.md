@@ -10,6 +10,39 @@ reads and always backs it up first.
 
 ## [Unreleased]
 
+### Fixed
+
+Found by a second from-scratch install, this time onto a fresh Ubuntu 26 VM
+running ISC's own Kea 3.2 packages untouched — same premise as the 0.9.1 pass
+below, different (and worse) bugs. All four are regression-tested; see
+AUDIT_FINDINGS.md for the full write-up of each.
+
+- **A Kea config full of ISC's own `//`/`#`/`/* */` comments — i.e. every
+  packaged install's default config, unmodified — silently parsed as empty**
+  instead of failing loudly, and saving anything on top of that emptied
+  skeleton overwrote the real subnets/reservations on disk with no warning
+  anywhere. `load_json()` now strips Kea's comment syntax before parsing, and
+  a file that still fails to parse after that raises instead of silently
+  returning a blank skeleton.
+- **Saving Global Settings could still duplicate the logger's output-path key**
+  and get the config rejected by Kea. 0.9.1 fixed the two places that *write*
+  this key but missed that the skeleton default `load_json()` falls back to
+  still hardcoded the old, wrong spelling — so the fallback path alone was
+  enough to reproduce the exact bug 0.9.1 believed it had closed.
+- **A config-parse fallback could leak one protocol's data into the other
+  protocol's file.** The fallback skeleton was shared, mutable, module-level
+  state, and one DHCPv6 route fetched the DHCPv4 skeleton by mistake when its
+  own config didn't parse — together, creating an IPv6 subnet could write a
+  stray `Dhcp4` block into `kea-dhcp6.conf`, which Kea then refused to load.
+  The fallback is now always an independent deep copy, and every DHCPv6 call
+  site was audited to fetch the right skeleton.
+- **Every DHCPv6 Prefix Delegation pool created through the UI was rejected by
+  Kea.** The only way to create one stored the whole `prefix/length` string as
+  Kea's `prefix` field and never set the separate `prefix-len` field Kea's
+  schema requires, so `kea-dhcp6 -t` failed with "missing parameter
+  'prefix-len'" on every single one. Fixed to submit `prefix` and `prefix-len`
+  as the separate fields Kea expects.
+
 ## [0.9.1] — 2026-07-31
 
 ### Fixed

@@ -237,7 +237,34 @@ def test_new_subnet6_na_and_pd_pools_coexist(mock_overlap, app):
         config = json.load(f)
     subnet_obj = config["Dhcp6"]["shared-networks"][0]["subnet6"][0]
     assert "pools" in subnet_obj
-    assert "pd-pools" in subnet_obj
+    assert subnet_obj["pd-pools"] == [{
+        "prefix": "2001:db8:a::",
+        "prefix-len": 48,
+        "delegated-len": 64,
+    }]
+
+
+def test_new_subnet6_against_missing_config_stays_dhcp6_rooted(app, client):
+    """
+    Regression test for a critical bug: new_subnet6() called load_json()
+    without passing the v6 default skeleton, so on a config file that
+    doesn't parse (or, as here, doesn't exist yet) it silently fell back to
+    the v4 skeleton. In a real session this produced a kea-dhcp6.conf file
+    with a stray top-level "Dhcp4" block (carrying an unrelated v4 subnet
+    from an earlier, unrelated request) alongside "Dhcp6" -- which Kea's own
+    parser rejected outright with "expecting Dhcp6". See AUDIT_FINDINGS.md,
+    2026-08-02.
+    """
+    import os
+    os.remove(app.config["DHCP6_CONFIG_FILE"])
+
+    response = client.post("/new-subnet6", data={"subnet": "2001:db8:c::/64"})
+    assert response.status_code == 302
+
+    with open(app.config["DHCP6_CONFIG_FILE"]) as f:
+        written = json.load(f)
+    assert "Dhcp4" not in written
+    assert written["Dhcp6"]["subnet6"][0]["subnet"] == "2001:db8:c::/64"
 
 
 # ── Phase 4: DUID-based reservations ─────────────────────────────────────────
@@ -475,7 +502,7 @@ def test_pools6_lists_standalone_subnets(app, client):
             "id": 1,
             "subnet": "2001:db8:66:10::/64",
             "pools": [{"pool": "2001:db8:66:10::100 - 2001:db8:66:10::200"}],
-            "pd-pools": [{"prefix": "2001:db8:66:2000::", "delegated-len": 64}],
+            "pd-pools": [{"prefix": "2001:db8:66:2000::", "prefix-len": 48, "delegated-len": 64}],
         }],
     })
 
@@ -643,7 +670,31 @@ def test_edit_subnet6_post_adds_pd_pool(app, client):
 
     dhcp6 = _read_v6_config(app)
     subnet_obj = dhcp6["shared-networks"][0]["subnet6"][0]
-    assert subnet_obj["pd-pools"] == [{"prefix": "2001:db8:51::/48", "delegated-len": 64}]
+    # Kea's pd-pools schema requires prefix and prefix-len as separate fields
+    # -- storing the whole "prefix/len" string as "prefix" alone is rejected
+    # by Kea's own syntax check with "missing parameter 'prefix-len'". See
+    # AUDIT_FINDINGS.md, 2026-08-02.
+    assert subnet_obj["pd-pools"] == [{
+        "prefix": "2001:db8:51::",
+        "prefix-len": 48,
+        "delegated-len": 64,
+    }]
+
+def test_edit_subnet6_get_prefills_pd_pool_with_prefix_len(app, client):
+    """The edit form's PD Pool field must show the full CIDR (prefix +
+    prefix-len combined), not just the bare prefix -- otherwise re-submitting
+    the pre-filled form without changes would silently drop the prefix
+    length the user never touched."""
+    _write_shared_network6_config(app)
+    client.post("/edit-subnet6", data={
+        "subnet": "2001:db8:50::/64",
+        "shared-network-name": "TestNet6",
+        "pd-pool": "2001:db8:51::/48",
+        "pd-length": "64",
+    })
+    response = client.get("/edit-subnet6?subnet=2001:db8:50::/64&shared-network-name=TestNet6")
+    assert response.status_code == 200
+    assert b"2001:db8:51::/48" in response.data
 
 def test_edit_subnet6_post_invalid_pd_length_returns_form_error(app, client):
     _write_shared_network6_config(app)

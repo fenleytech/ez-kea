@@ -452,7 +452,10 @@ def _reload_via_control_socket(version: str) -> Union[Response, Tuple[Response, 
     config_key = "DHCP6_CONFIG_FILE" if version == "6" else "DHCP_CONFIG_FILE"
     dhcp_key = "Dhcp6" if version == "6" else "Dhcp4"
 
-    socket_path = find_unix_socket_path(load_json(current_app.config[config_key]), dhcp_key)
+    socket_path = find_unix_socket_path(
+        load_json(current_app.config[config_key], default=_DEFAULT_KEA6_CONFIG if version == "6" else None),
+        dhcp_key,
+    )
     if not socket_path:
         return jsonify({
             "error": f"Reload strategy is set to 'control socket' but {dhcp_key} has no UNIX "
