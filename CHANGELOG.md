@@ -10,6 +10,8 @@ reads and always backs it up first.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-08-02
+
 ### Fixed
 
 Found by a second from-scratch install, this time onto a fresh Ubuntu 26 VM
@@ -159,6 +161,7 @@ version on it so an install can be identified.
   note and nothing more.
 - Branding standardized on EZ-KEA.
 
-[Unreleased]: https://github.com/fenleytech/ez-kea/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/fenleytech/ez-kea/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/fenleytech/ez-kea/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/fenleytech/ez-kea/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fenleytech/ez-kea/releases/tag/v0.9.0
