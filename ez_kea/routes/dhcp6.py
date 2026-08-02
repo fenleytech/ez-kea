@@ -3,7 +3,7 @@
 
 from typing import Any, Dict, Optional, Union, Tuple
 from flask_login import login_required
-from flask import Blueprint, render_template, request, redirect, url_for, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_kea_config, with_config_lock
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_duid, has_overlap, return_available_ips, get_active_leases, get_active_leases6, unix_to_human_readable, sanitize_hostname
@@ -107,6 +107,46 @@ def delete_shared_network6() -> Response:
         ]
         save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
         
+    return redirect(url_for('main.dhcp6.pools6'))
+
+@dhcp6_bp.route("/edit-shared-network6", methods=["GET", "POST"])
+@login_required
+@with_config_lock("DHCP6_CONFIG_FILE")
+def edit_shared_network6() -> Union[str, Response, Tuple[str, int]]:
+    """Rename an existing DHCPv6 shared network in place."""
+    config_file = current_app.config["DHCP6_CONFIG_FILE"]
+    config = load_json(config_file)
+    errors = []
+
+    if request.method == "GET":
+        shared_network_name = request.args.get("shared-network-name")
+        network = next((net for net in config.get("Dhcp6", {}).get("shared-networks", [])
+                         if net.get("name") == shared_network_name), None)
+        if network is None:
+            flash("Shared network not found.", "danger")
+            return redirect(url_for("main.dhcp6.pools6"))
+        return render_template("new_shared_network6.html", errors=errors, editing=True, original_name=shared_network_name)
+
+    original_name = request.form.get("original-shared-network-name")
+    shared_network_name = request.form.get("shared-network-name")
+    networks = config.get("Dhcp6", {}).get("shared-networks", [])
+    network = next((net for net in networks if net.get("name") == original_name), None)
+
+    if not shared_network_name:
+        errors.append("Shared network name is required.")
+    elif network is None:
+        errors.append("Shared network was not found in the configuration.")
+    else:
+        for net in networks:
+            if net is not network and net.get("name") == shared_network_name:
+                errors.append(f"Shared network '{shared_network_name}' already exists.")
+                break
+
+    if errors:
+        return render_template("new_shared_network6.html", errors=errors, editing=True, original_name=original_name), 400
+
+    network["name"] = shared_network_name
+    save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     return redirect(url_for('main.dhcp6.pools6'))
 
 @dhcp6_bp.route("/new-subnet6", methods=["GET", "POST"])
@@ -254,6 +294,111 @@ def delete_subnet6() -> Response:
     save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp6.pools6"))
 
+@dhcp6_bp.route("/edit-subnet6", methods=["GET", "POST"])
+@login_required
+@with_config_lock("DHCP6_CONFIG_FILE")
+def edit_subnet6() -> Union[str, Response, Tuple[str, int]]:
+    """Edit an existing DHCPv6 subnet's address pool and PD pool in place.
+    The subnet's CIDR is locked, same rationale as edit_subnet() in
+    dhcp4.py."""
+    config_file = current_app.config["DHCP6_CONFIG_FILE"]
+    config = load_json(config_file)
+    errors = []
+
+    if request.method == "GET":
+        subnet = request.args.get("subnet")
+        subnet_obj, shared_network_name = _find_subnet6(config, subnet)
+        if subnet_obj is None:
+            flash("Subnet not found.", "danger")
+            return redirect(url_for("main.dhcp6.pools6"))
+
+        pool_start, pool_end = "", ""
+        if subnet_obj.get("pools"):
+            pool_str = subnet_obj["pools"][0].get("pool", "")
+            if " - " in pool_str:
+                pool_start, pool_end = pool_str.split(" - ", 1)
+
+        pd_pool, pd_length = "", ""
+        if subnet_obj.get("pd-pools"):
+            pd = subnet_obj["pd-pools"][0]
+            pd_pool = pd.get("prefix", "")
+            pd_length = pd.get("delegated-len", "")
+
+        return render_template(
+            "new_subnet6.html", shared_network_name=shared_network_name or "", errors=errors,
+            editing=True, subnet=subnet, pool_start=pool_start, pool_end=pool_end,
+            pd_pool=pd_pool, pd_length=pd_length,
+        )
+
+    # POST
+    subnet = request.form.get("subnet")
+    shared_network_name = request.form.get("shared-network-name", "").strip()
+    pd_pool = request.form.get("pd-pool")
+    pd_length = request.form.get("pd-length")
+    pool_start = request.form.get("pool-start")
+    pool_end = request.form.get("pool-end")
+
+    subnet_obj, _ = _find_subnet6(config, subnet)
+    if subnet_obj is None:
+        errors.append(f"Subnet '{subnet}' was not found in the configuration.")
+
+    pd_length_int = None
+    if pd_pool:
+        try:
+            pd_pool_network = ipaddress.IPv6Network(pd_pool)
+        except ValueError:
+            pd_pool_network = None
+            errors.append("Invalid Prefix Delegation Pool format.")
+
+        if not pd_length:
+            errors.append("Prefix Delegation Length is required when specifying a PD Pool.")
+        else:
+            try:
+                pd_length_int = int(pd_length)
+            except ValueError:
+                pd_length_int = None
+                errors.append("Prefix Delegation Length must be a whole number.")
+
+            if pd_length_int is not None:
+                if not (1 <= pd_length_int <= 128):
+                    errors.append("Prefix Delegation Length must be between 1 and 128.")
+                elif pd_pool_network is not None and pd_length_int < pd_pool_network.prefixlen:
+                    errors.append(
+                        f"Delegated length (/{pd_length_int}) must be greater than or equal to "
+                        f"the PD pool's own prefix length (/{pd_pool_network.prefixlen})."
+                    )
+
+    if pool_start or pool_end:
+        if not pool_start or not pool_end:
+            errors.append("Both Pool Start and Pool End are required for a standard address pool.")
+        elif not subnet:
+            pass  # Already reported "Subnet is required." above.
+        elif not validate_ip_range(subnet, pool_start, pool_end):
+            errors.append(
+                "Invalid IPv6 address pool range. Please ensure the range is within the "
+                "subnet and start address < end address."
+            )
+
+    if errors:
+        return render_template(
+            "new_subnet6.html", shared_network_name=shared_network_name, errors=errors,
+            editing=True, subnet=subnet, pool_start=pool_start or "", pool_end=pool_end or "",
+            pd_pool=pd_pool or "", pd_length=pd_length or "",
+        ), 400
+
+    if pool_start and pool_end:
+        subnet_obj["pools"] = [{"pool": f"{pool_start} - {pool_end}"}]
+    else:
+        subnet_obj.pop("pools", None)
+
+    if pd_pool:
+        subnet_obj["pd-pools"] = [{"prefix": pd_pool, "delegated-len": pd_length_int}]
+    else:
+        subnet_obj.pop("pd-pools", None)
+
+    save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
+    return redirect(url_for("main.dhcp6.pools6"))
+
 
 # ── DUID-based reservations ──────────────────────────────────────────────────
 # Kea DHCPv6 reservations are keyed by DUID rather than MAC, and use plural
@@ -271,6 +416,18 @@ def _duid_reservation_sort_key(reservation: Dict[str, Any]) -> Tuple[int, Any]:
         except (ValueError, TypeError):
             pass
     return (1, reservation.get("duid", ""))
+
+def _find_reservation6(config: Dict[str, Any], duid: str, subnet: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Locate a DUID reservation by duid within a specific subnet6.
+    Returns (subnet_obj, reservation_obj); either is None if the subnet
+    itself, or the reservation within it, can't be found."""
+    subnet_obj, _ = _find_subnet6(config, subnet)
+    if subnet_obj is None:
+        return None, None
+    for reservation in subnet_obj.get("reservations", []):
+        if reservation.get("duid") == duid:
+            return subnet_obj, reservation
+    return subnet_obj, None
 
 def _collect_subnet6_cidrs(config: Dict[str, Any]) -> list:
     """All configured subnet6 CIDRs (standalone + shared-network-nested), for
@@ -384,13 +541,104 @@ def delete_reservation6() -> Response:
     config = load_json(current_app.config["DHCP6_CONFIG_FILE"])
 
     if subnet:
-        subnet_obj, _ = _find_subnet6(config, subnet)
-        if subnet_obj and "reservations" in subnet_obj:
-            subnet_obj["reservations"] = [
-                res for res in subnet_obj["reservations"] if res.get("duid") != duid
-            ]
+        subnet_obj, reservation = _find_reservation6(config, duid, subnet)
+        if subnet_obj and reservation:
+            subnet_obj["reservations"].remove(reservation)
 
     save_kea_config(config, current_app.config["DHCP6_CONFIG_FILE"], current_app.config["BACKUP_DIR"])
+    return redirect(url_for("main.dhcp6.reservations6"))
+
+@dhcp6_bp.route("/edit-reservation6", methods=["GET", "POST"])
+@login_required
+@with_config_lock("DHCP6_CONFIG_FILE")
+def edit_reservation6() -> Union[str, Response, Tuple[str, int]]:
+    """Edit an existing DUID-based reservation in place. The subnet it lives
+    on is locked (it's how the reservation is located); the DUID itself is
+    editable since typo fixes are a common, low-risk edit."""
+    config_file = current_app.config["DHCP6_CONFIG_FILE"]
+    config = load_json(config_file)
+    available_subnets = _collect_subnet6_cidrs(config)
+    errors = []
+
+    if request.method == "GET":
+        duid = request.args.get("duid")
+        subnet = request.args.get("subnet")
+        subnet_obj, reservation = _find_reservation6(config, duid, subnet)
+        if reservation is None:
+            flash("Reservation not found.", "danger")
+            return redirect(url_for("main.dhcp6.reservations6"))
+
+        return render_template(
+            "new_reservation6.html", available_subnets=available_subnets, errors=errors,
+            editing=True, subnet=subnet, reservation=reservation,
+        )
+
+    # POST
+    original_duid = request.form.get("original-duid")
+    subnet = request.form.get("subnet")
+    duid = request.form.get("duid")
+    hostname_raw = request.form.get("hostname")
+    ip_address = request.form.get("ip-address", "").strip()
+    prefix = request.form.get("prefix", "").strip()
+
+    if not subnet: errors.append("Subnet is required.")
+
+    if not duid: errors.append("DUID is required.")
+    elif not validate_duid(duid): errors.append("Invalid DUID format.")
+
+    hostname = sanitize_hostname(hostname_raw) if hostname_raw else ""
+    if not hostname: errors.append("Hostname is required.")
+
+    if not ip_address and not prefix:
+        errors.append("Either an IPv6 address or a delegated prefix is required.")
+    if ip_address:
+        try:
+            ipaddress.IPv6Address(ip_address)
+        except ValueError:
+            errors.append("Invalid IPv6 address format.")
+    if prefix:
+        try:
+            ipaddress.IPv6Network(prefix)
+        except ValueError:
+            errors.append("Invalid IPv6 prefix format.")
+
+    subnet_obj, reservation = None, None
+    if subnet:
+        subnet_obj, reservation = _find_reservation6(config, original_duid, subnet)
+        if subnet_obj is None:
+            errors.append(f"Subnet '{subnet}' was not found in the configuration.")
+        elif reservation is None:
+            errors.append("Reservation was not found in the configuration.")
+
+    if not errors and duid != original_duid:
+        for other in subnet_obj.get("reservations", []):
+            if other is not reservation and other.get("duid") == duid:
+                errors.append(f"A reservation with DUID '{duid}' already exists in this subnet.")
+                break
+
+    if errors:
+        fallback_reservation = {
+            "duid": duid or original_duid, "hostname": hostname,
+            "ip-addresses": [ip_address] if ip_address else [],
+            "prefixes": [prefix] if prefix else [],
+        }
+        return render_template(
+            "new_reservation6.html", available_subnets=available_subnets, errors=errors,
+            editing=True, subnet=subnet, reservation=fallback_reservation,
+        ), 400
+
+    updated_fields = {"duid": duid, "hostname": hostname}
+    if ip_address:
+        updated_fields["ip-addresses"] = [ip_address]
+    else:
+        reservation.pop("ip-addresses", None)
+    if prefix:
+        updated_fields["prefixes"] = [prefix]
+    else:
+        reservation.pop("prefixes", None)
+    reservation.update(updated_fields)
+
+    save_kea_config(config, config_file, current_app.config["BACKUP_DIR"])
     return redirect(url_for("main.dhcp6.reservations6"))
 
 @dhcp6_bp.route("/leases6")
