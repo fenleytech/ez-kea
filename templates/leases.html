@@ -3,7 +3,7 @@
 {% block title %}IPv4 Leases - EZ-KEA{% endblock %}
 
 {% macro filter_qs(page=None, sort=None, direction=None) -%}
-q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ subnet_id | urlencode }}&sort={{ (sort or sort_col) | urlencode }}&direction={{ (direction or dir_col) | urlencode }}{% if page %}&page={{ page }}{% endif %}
+q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet={{ subnet | urlencode }}&range={{ selected_range | urlencode }}&start={{ start_text | urlencode }}&end={{ end_text | urlencode }}&sort={{ (sort or sort_col) | urlencode }}&direction={{ (direction or dir_col) | urlencode }}{% if page %}&page={{ page }}{% endif %}
 {%- endmacro %}
 
 {% macro sort_link(column, label) -%}
@@ -27,24 +27,44 @@ q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ su
         <h2><i data-lucide="filter"></i> Search Leases</h2>
     </div>
     <div class="card-body">
-        <form action="{{ url_for('main.dhcp4.leases') }}" method="GET">
+        <form action="{{ url_for('main.dhcp4.leases') }}" method="GET" id="lease-search-form">
             <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
                 <input type="text" class="form-control" name="q" style="flex: 1 1 18rem;"
                     placeholder="MAC, IP address, or hostname" value="{{ search_query }}">
+                <input type="text" class="form-control" name="subnet" style="flex: 0 0 14rem;"
+                    placeholder="Subnet CIDR, e.g. 10.10.10.0/24" value="{{ subnet }}">
                 <select class="form-control" name="status" style="flex: 0 0 10rem;">
                     <option value="">Any status</option>
                     {% for value in statuses %}
                     <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ value|capitalize }}</option>
                     {% endfor %}
                 </select>
-                <input type="text" class="form-control" name="subnet_id" style="flex: 0 0 8rem;"
-                    placeholder="Subnet ID" value="{{ subnet_id }}">
                 <button type="submit" class="btn btn-primary" style="white-space: nowrap;">
                     <i data-lucide="search"></i> Search
                 </button>
                 <a href="{{ url_for('main.dhcp4.leases') }}" class="btn btn-outline" style="white-space: nowrap;">
                     <i data-lucide="rotate-ccw"></i> Reset
                 </a>
+            </div>
+
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1.25rem; align-items: flex-end;">
+                <div class="form-group" style="margin: 0; flex: 0 0 14rem;">
+                    <label for="range" class="form-label">Expiration timeframe</label>
+                    <select class="form-control" id="range" name="range">
+                        {% for value, label, _start_offset, _end_offset in time_ranges %}
+                        <option value="{{ value }}" {% if selected_range == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                        <option value="custom" {% if selected_range == 'custom' %}selected{% endif %}>Custom range…</option>
+                    </select>
+                </div>
+                <div class="form-group lease-custom-range" style="margin: 0; flex: 0 0 14rem;">
+                    <label for="start" class="form-label">From</label>
+                    <input type="datetime-local" step="1" class="form-control" id="start" name="start" value="{{ start_text }}">
+                </div>
+                <div class="form-group lease-custom-range" style="margin: 0; flex: 0 0 14rem;">
+                    <label for="end" class="form-label">To</label>
+                    <input type="datetime-local" step="1" class="form-control" id="end" name="end" value="{{ end_text }}">
+                </div>
             </div>
         </form>
     </div>
@@ -78,6 +98,7 @@ q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ su
                         <th>{{ sort_link('address', 'IP Address') }}</th>
                         <th>Client</th>
                         <th>{{ sort_link('hostname', 'Hostname') }}</th>
+                        <th>{{ sort_link('subnet', 'Subnet') }}</th>
                         <th>{{ sort_link('expire', 'Expiration Time') }}</th>
                         <th>Status</th>
                     </tr>
@@ -94,6 +115,13 @@ q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ su
                                 lease.hostname }}</span>
                             {% else %}
                             <span class="text-secondary">Unknown</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if lease.subnet %}
+                            <span class="badge" style="background-color: rgba(255, 255, 255, 0.1);">{{ lease.subnet }}</span>
+                            {% else %}
+                            <span class="text-secondary">-</span>
                             {% endif %}
                         </td>
                         <td>{{ lease.expiration_time }}</td>
@@ -119,7 +147,7 @@ q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ su
                 style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
             <h2>No Matching Leases</h2>
             <p style="color: var(--text-secondary);">
-                {% if search_query or status or subnet_id %}
+                {% if search_query or status or subnet or selected_range != 'all' %}
                 Nothing in the lease table matched these filters.
                 {% else %}
                 There are currently no DHCP leases on record.
@@ -149,4 +177,23 @@ q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ su
     Searches run against an index of the lease file that refreshes automatically in the background
     (last refreshed {{ stats.last_ingest_text }}{% if stats.last_ingest %}, {{ '{:,}'.format(stats.lease4) }} leases indexed{% endif %}).
 </p>
+
+<script>
+    // Custom From/To only apply when "Custom range…" is selected, matching
+    // the Logs page's time range control.
+    (function () {
+        var rangeSelect = document.getElementById('range');
+        var customFields = document.querySelectorAll('.lease-custom-range');
+
+        function syncCustomFields() {
+            var custom = rangeSelect.value === 'custom';
+            customFields.forEach(function (field) {
+                field.style.display = custom ? '' : 'none';
+            });
+        }
+
+        rangeSelect.addEventListener('change', syncCustomFields);
+        syncCustomFields();
+    })();
+</script>
 {% endblock %}

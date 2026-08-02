@@ -590,8 +590,10 @@ def leases() -> str:
 
     q = (request.values.get("q") or "").strip()
     status = (request.values.get("status") or "").strip() or None
-    subnet_id_raw = (request.values.get("subnet_id") or "").strip()
-    subnet_id = int(subnet_id_raw) if subnet_id_raw.isdigit() else None
+    subnet = (request.values.get("subnet") or "").strip() or None
+    start, end, range_value = state_index.resolve_lease_time_range(
+        request.values.get("range", ""), request.values.get("start", ""), request.values.get("end", "")
+    )
     page, sort, direction = _pagination_params()
     sort = sort or "expire"
     direction = direction or "desc"
@@ -601,7 +603,7 @@ def leases() -> str:
     try:
         state_index.ingest_all(dict(current_app.config), conn, kinds=["lease4"])
         result = state_index.search_lease4(
-            conn, q=q or None, status=status, subnet_id=subnet_id,
+            conn, q=q or None, status=status, subnet=subnet, start=start, end=end,
             sort=sort, direction=direction,
             limit=page_size, offset=(page - 1) * page_size,
         )
@@ -624,7 +626,11 @@ def leases() -> str:
         total=result["total"],
         page=page, page_size=page_size,
         has_next=(page * page_size) < result["total"],
-        search_query=q, status=status or "", subnet_id=subnet_id_raw,
+        search_query=q, status=status or "", subnet=subnet or "",
+        selected_range=range_value,
+        start_text=request.values.get("start", "").strip(),
+        end_text=request.values.get("end", "").strip(),
+        time_ranges=state_index.LEASE_TIME_RANGES,
         sort=sort, direction=direction,
         stats=stats, statuses=state_index.STATUS_LABELS,
     )
@@ -636,8 +642,10 @@ def leases_export() -> Response:
     """Stream the current lease search as CSV."""
     q = (request.values.get("q") or "").strip() or None
     status = (request.values.get("status") or "").strip() or None
-    subnet_id_raw = (request.values.get("subnet_id") or "").strip()
-    subnet_id = int(subnet_id_raw) if subnet_id_raw.isdigit() else None
+    subnet = (request.values.get("subnet") or "").strip() or None
+    start, end, _range_value = state_index.resolve_lease_time_range(
+        request.values.get("range", ""), request.values.get("start", ""), request.values.get("end", "")
+    )
     _, sort, direction = _pagination_params()
     app_config = dict(current_app.config)
 
@@ -646,7 +654,7 @@ def leases_export() -> Response:
         try:
             state_index.ingest_all(app_config, conn, kinds=["lease4"])
             yield from state_index.iter_search(
-                conn, "lease4", q=q, status=status, subnet_id=subnet_id,
+                conn, "lease4", q=q, status=status, subnet=subnet, start=start, end=end,
                 sort=sort or "expire", direction=direction or "desc",
             )
         finally:
@@ -657,12 +665,12 @@ def leases_export() -> Response:
     def to_values(row):
         return [
             row["address"], row["mac_address"] or "", row["client_id"] or "",
-            row["hostname"] or "", row["subnet_id"] or "", row["valid_lifetime"] or "",
+            row["hostname"] or "", row["subnet"] or "", row["valid_lifetime"] or "",
             datetime.fromtimestamp(row["expire"]).isoformat(sep=" ") if row["expire"] else "",
             row["state"],
         ]
 
     return stream_csv_response(
-        ["address", "mac_address", "client_id", "hostname", "subnet_id", "valid_lifetime", "expire", "state"],
+        ["address", "mac_address", "client_id", "hostname", "subnet", "valid_lifetime", "expire", "state"],
         rows(), to_values, "ez-kea-leases4", state_index.EXPORT_MAX_ROWS,
     )

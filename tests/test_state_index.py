@@ -206,9 +206,12 @@ def populated(config, paths, conn):
         ["10.0.0.7", "cc:cc:cc:cc:cc:cc", "", "4000", str(int(time.time()) + 3600), "1", "0", "0",
          "declined-host", "1", "", ""],
     ])
-    write_config4(paths["config4"], subnets=[{"id": 1, "subnet": "10.0.0.0/24", "reservations": [
-        {"hw-address": "11:22:33:44:55:66", "ip-address": "10.0.0.50", "hostname": "res-host"},
-    ]}])
+    write_config4(paths["config4"], subnets=[
+        {"id": 1, "subnet": "10.0.0.0/24", "reservations": [
+            {"hw-address": "11:22:33:44:55:66", "ip-address": "10.0.0.50", "hostname": "res-host"},
+        ]},
+        {"id": 2, "subnet": "10.0.1.0/24", "reservations": []},
+    ])
     write_config6(paths["config6"])
     si.ingest_all(config, conn)
     return conn
@@ -242,10 +245,72 @@ def test_search_lease4_status_declined(populated):
     assert {row["hostname"] for row in result["rows"]} == {"declined-host"}
 
 
-def test_search_lease4_subnet_id_filter(populated):
-    result = si.search_lease4(populated, subnet_id=2)
+def test_search_lease4_subnet_filter(populated):
+    """subnet_id is Kea's internal number, meaningless to an operator and not
+    shown anywhere -- searches must go by the actual subnet CIDR instead,
+    resolved from the DHCP config at ingest time."""
+    result = si.search_lease4(populated, subnet="10.0.1.0/24")
     assert result["total"] == 1
     assert result["rows"][0]["hostname"] == "expired-host"
+    assert result["rows"][0]["subnet"] == "10.0.1.0/24"
+
+
+def test_search_lease4_rows_carry_resolved_subnet_cidr(populated):
+    result = si.search_lease4(populated, ip="10.0.0.5")
+    assert result["rows"][0]["subnet"] == "10.0.0.0/24"
+
+
+def test_search_lease4_time_range_filters_by_expire(populated):
+    now = int(time.time())
+    result = si.search_lease4(populated, start=now, end=now + 7200)
+    hostnames = {row["hostname"] for row in result["rows"]}
+    # active-host and declined-host both expire ~1h out; expired-host
+    # already expired an hour ago and falls outside this window.
+    assert hostnames == {"active-host", "declined-host"}
+
+
+def test_resolve_lease_time_range_preset_next_hour():
+    start, end, resolved = si.resolve_lease_time_range("1h", "", "")
+    now = time.time()
+    assert resolved == "1h"
+    assert start == pytest.approx(now, abs=2)
+    assert end == pytest.approx(now + 3600, abs=2)
+
+
+def test_resolve_lease_time_range_already_expired():
+    start, end, resolved = si.resolve_lease_time_range("expired", "", "")
+    assert resolved == "expired"
+    assert start is None
+    assert end == pytest.approx(time.time(), abs=2)
+
+
+def test_resolve_lease_time_range_custom_uses_calendar_fields():
+    start, end, resolved = si.resolve_lease_time_range("custom", "2026-01-01T00:00", "2026-01-02T00:00")
+    assert resolved == "custom"
+    assert start is not None and end is not None and start < end
+
+
+def test_resolve_lease_time_range_defaults_to_all():
+    start, end, resolved = si.resolve_lease_time_range("", "", "")
+    assert resolved == "all"
+    assert start is None
+    assert end is None
+
+
+def test_parse_lease4_resolves_subnet_id_to_cidr(paths):
+    write_csv(paths["lease4"], LEASE4_HEADER, [
+        ["10.0.0.5", "aa:bb:cc:dd:ee:ff", "", "4000", "9999999999", "1", "0", "0", "", "0", "", ""],
+    ])
+    rows = si.parse_lease4(paths["lease4"], subnet_map={1: "10.0.0.0/24"})
+    assert rows[0]["subnet"] == "10.0.0.0/24"
+
+
+def test_parse_lease4_unmapped_subnet_id_yields_no_subnet(paths):
+    write_csv(paths["lease4"], LEASE4_HEADER, [
+        ["10.0.0.5", "aa:bb:cc:dd:ee:ff", "", "4000", "9999999999", "99", "0", "0", "", "0", "", ""],
+    ])
+    rows = si.parse_lease4(paths["lease4"])
+    assert rows[0]["subnet"] is None
 
 
 def test_search_lease4_uninterpretable_mac_returns_empty(populated):

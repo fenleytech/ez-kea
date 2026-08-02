@@ -49,6 +49,7 @@ import os
 import sqlite3
 import threading
 import time
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .log_index import classify_term, normalize_mac, normalize_mac_prefix
@@ -68,6 +69,62 @@ STATUS_LABELS = ("active", "expired", "declined", "reclaimed")
 # Kea's lease6 `lease_type` column.
 LEASE6_TYPE_LABELS = {0: "IA_NA", 1: "IA_TA", 2: "IA_PD"}
 
+# Relative time-range presets for the Leases pages' expiry filter, the same
+# shape as the Logs page's LOG_TIME_RANGES (routes/system.py) so both search
+# experiences work the same way. Windows are forward-looking by default
+# (leases mostly expire in the future while active), with an explicit
+# backward-looking option for the common "what already expired" question.
+LEASE_TIME_RANGES = (
+    ("1h",      "Expiring in the next hour",    0, 3600),
+    ("24h",     "Expiring in the next 24 hours", 0, 86400),
+    ("7d",      "Expiring in the next 7 days",   0, 604800),
+    ("expired", "Already expired",               None, 0),
+    ("all",     "Any time",                      None, None),
+)
+
+
+def parse_datetime_local(value: str) -> Optional[float]:
+    """Epoch seconds for an <input type=datetime-local> value, or None.
+    Same parsing as routes/system.py's _parse_datetime_local -- lifted here
+    since both the Logs and Leases pages need it."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+_LEASE_RANGE_OFFSETS = {value: (start, end) for value, _label, start, end in LEASE_TIME_RANGES}
+
+
+def resolve_lease_time_range(
+    range_value: str, start_text: str, end_text: str
+) -> Tuple[Optional[float], Optional[float], str]:
+    """Turn the Leases page's range selection into absolute (start, end)
+    epoch bounds, the same way routes/system.py's _log_search_params resolves
+    LOG_TIME_RANGES -- a preset wins unless "custom" is selected, in which
+    case the calendar start/end fields are used as typed."""
+    start_text = (start_text or "").strip()
+    end_text = (end_text or "").strip()
+    range_value = (range_value or "").strip() or ("custom" if (start_text or end_text) else "all")
+
+    if range_value == "custom":
+        return parse_datetime_local(start_text), parse_datetime_local(end_text), range_value
+
+    offsets = _LEASE_RANGE_OFFSETS.get(range_value)
+    if offsets is None:
+        return None, None, "all"
+    start_offset, end_offset = offsets
+    now = time.time()
+    start = (now + start_offset) if start_offset is not None else None
+    end = (now + end_offset) if end_offset is not None else None
+    return start, end, range_value
+
 
 # ---------------------------------------------------------------------------
 # Database
@@ -81,13 +138,14 @@ CREATE TABLE IF NOT EXISTS state_lease4 (
     client_id      TEXT,
     hostname       TEXT,
     subnet_id      INTEGER,
+    subnet         TEXT,
     valid_lifetime INTEGER,
     expire         INTEGER,
     state          INTEGER,
     pool_id        INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_lease4_expire   ON state_lease4(expire);
-CREATE INDEX IF NOT EXISTS idx_lease4_subnet   ON state_lease4(subnet_id);
+CREATE INDEX IF NOT EXISTS idx_lease4_subnet   ON state_lease4(subnet);
 CREATE INDEX IF NOT EXISTS idx_lease4_state    ON state_lease4(state);
 CREATE INDEX IF NOT EXISTS idx_lease4_hostname ON state_lease4(hostname);
 
@@ -98,6 +156,7 @@ CREATE TABLE IF NOT EXISTS state_lease6 (
     duid           TEXT,
     hostname       TEXT,
     subnet_id      INTEGER,
+    subnet         TEXT,
     pref_lifetime  INTEGER,
     valid_lifetime INTEGER,
     expire         INTEGER,
@@ -107,7 +166,7 @@ CREATE TABLE IF NOT EXISTS state_lease6 (
     pool_id        INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_lease6_expire   ON state_lease6(expire);
-CREATE INDEX IF NOT EXISTS idx_lease6_subnet   ON state_lease6(subnet_id);
+CREATE INDEX IF NOT EXISTS idx_lease6_subnet   ON state_lease6(subnet);
 CREATE INDEX IF NOT EXISTS idx_lease6_state    ON state_lease6(state);
 CREATE INDEX IF NOT EXISTS idx_lease6_type     ON state_lease6(lease_type);
 CREATE INDEX IF NOT EXISTS idx_lease6_hostname ON state_lease6(hostname);
@@ -162,8 +221,35 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(_SCHEMA)
+    _migrate_schema(conn)
     conn.commit()
     return conn
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after a database already exists on disk.
+
+    The index is deliberately disposable (see module docstring) so this is
+    the only migration path -- no version table, just "does the column
+    exist yet." Idempotent and cheap on the common (already-migrated) case:
+    PRAGMA table_info is a metadata read, not a table scan, and the
+    DROP/CREATE INDEX pair below only runs the one time a column is
+    actually added, not on every connect().
+    """
+    migrated = False
+    for table in ("state_lease4", "state_lease6"):
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "subnet" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN subnet TEXT")
+            migrated = True
+    if migrated:
+        # idx_lease4_subnet/idx_lease6_subnet pre-existed pointing at
+        # subnet_id under this same name; CREATE INDEX IF NOT EXISTS would
+        # see the name taken and silently keep indexing the wrong column.
+        conn.execute("DROP INDEX IF EXISTS idx_lease4_subnet")
+        conn.execute("DROP INDEX IF EXISTS idx_lease6_subnet")
+        conn.execute("CREATE INDEX idx_lease4_subnet ON state_lease4(subnet)")
+        conn.execute("CREATE INDEX idx_lease6_subnet ON state_lease6(subnet)")
 
 
 def _get_meta(conn: sqlite3.Connection, key: str) -> Optional[str]:
@@ -203,10 +289,33 @@ def _fingerprint(path: str) -> str:
 # Parsing
 # ---------------------------------------------------------------------------
 
-def parse_lease4(path: str) -> List[Dict[str, Any]]:
+def _subnet_id_map(config: Dict[str, Any], dhcp_key: str, subnet_key: str) -> Dict[int, str]:
+    """Kea's numeric subnet id -> the actual subnet CIDR, standalone and
+    shared-network subnets alike. The lease CSVs only ever record the id;
+    this is what makes it possible to search/display the CIDR instead."""
+    mapping: Dict[int, str] = {}
+    root = config.get(dhcp_key, {})
+    for subnet in root.get(subnet_key, []):
+        if "id" in subnet and "subnet" in subnet:
+            mapping[subnet["id"]] = subnet["subnet"]
+    for network in root.get("shared-networks", []):
+        for subnet in network.get(subnet_key, []):
+            if "id" in subnet and "subnet" in subnet:
+                mapping[subnet["id"]] = subnet["subnet"]
+    return mapping
+
+
+def parse_lease4(path: str, subnet_map: Optional[Dict[int, str]] = None) -> List[Dict[str, Any]]:
     """Every row currently in the lease4 CSV, one per address, keeping the
     *last* occurrence (see module docstring for why that's the correct
-    choice between LFC compaction passes)."""
+    choice between LFC compaction passes).
+
+    `subnet_map` resolves Kea's internal numeric subnet_id to the actual
+    subnet CIDR (e.g. 10.10.10.0/24) an operator can search and recognise --
+    subnet_id on its own is meaningless outside Kea's own config and isn't
+    displayed anywhere, so it's not something a search filter should expose.
+    """
+    subnet_map = subnet_map or {}
     by_address: "Dict[str, Dict[str, Any]]" = {}
     try:
         with open(path, "r", newline="") as handle:
@@ -236,6 +345,7 @@ def parse_lease4(path: str) -> List[Dict[str, Any]]:
                     "client_id": row.get("client_id") or None,
                     "hostname": row.get("hostname") or None,
                     "subnet_id": subnet_id,
+                    "subnet": subnet_map.get(subnet_id),
                     "valid_lifetime": valid_lifetime,
                     "expire": expire,
                     "state": state,
@@ -246,9 +356,11 @@ def parse_lease4(path: str) -> List[Dict[str, Any]]:
     return list(by_address.values())
 
 
-def parse_lease6(path: str) -> List[Dict[str, Any]]:
+def parse_lease6(path: str, subnet_map: Optional[Dict[int, str]] = None) -> List[Dict[str, Any]]:
     """Every row currently in the lease6 CSV, one per address, last
-    occurrence wins."""
+    occurrence wins. See parse_lease4 for why subnet_id is resolved to the
+    actual subnet CIDR here rather than left as Kea's internal number."""
+    subnet_map = subnet_map or {}
     by_address: "Dict[str, Dict[str, Any]]" = {}
     try:
         with open(path, "r", newline="") as handle:
@@ -286,6 +398,7 @@ def parse_lease6(path: str) -> List[Dict[str, Any]]:
                     "duid": (row.get("duid") or "").lower() or None,
                     "hostname": row.get("hostname") or None,
                     "subnet_id": subnet_id,
+                    "subnet": subnet_map.get(subnet_id),
                     "pref_lifetime": row.get("pref_lifetime") or None,
                     "valid_lifetime": row.get("valid_lifetime") or None,
                     "expire": expire,
@@ -447,28 +560,38 @@ def ingest_all(config: Dict[str, Any], conn: sqlite3.Connection, kinds: Optional
     last pass (or all of them, if `kinds` narrows the set -- used by the
     post-save reindex nudge to touch only the reservation table that just
     changed)."""
+    from .config_manager import load_json
+
     kinds = set(kinds) if kinds else {"lease4", "lease6", "reservation4", "reservation6"}
     result: Dict[str, bool] = {}
 
     if "lease4" in kinds:
         path = config.get("DHCP_LEASES_FILE", "") or ""
+        config_path = config.get("DHCP_CONFIG_FILE", "") or ""
+        # Folded into one fingerprint: a subnet's CIDR can change (or a
+        # subnet can be added/removed) without the lease file itself
+        # changing, and that must still trigger a reingest since lease rows
+        # carry the resolved CIDR, not just Kea's internal subnet_id.
+        fingerprint = f"{_fingerprint(path)}|{_fingerprint(config_path)}"
         result["lease4"] = _ingest_source(
-            conn, "lease4", "lease4_fingerprint", _fingerprint(path), lambda: parse_lease4(path)
+            conn, "lease4", "lease4_fingerprint", fingerprint,
+            lambda: parse_lease4(path, _subnet_id_map(load_json(config_path), "Dhcp4", "subnet4")),
         )
     if "lease6" in kinds:
         path = config.get("DHCP6_LEASES_FILE", "") or ""
+        config_path = config.get("DHCP6_CONFIG_FILE", "") or ""
+        fingerprint = f"{_fingerprint(path)}|{_fingerprint(config_path)}"
         result["lease6"] = _ingest_source(
-            conn, "lease6", "lease6_fingerprint", _fingerprint(path), lambda: parse_lease6(path)
+            conn, "lease6", "lease6_fingerprint", fingerprint,
+            lambda: parse_lease6(path, _subnet_id_map(load_json(config_path), "Dhcp6", "subnet6")),
         )
     if "reservation4" in kinds:
-        from .config_manager import load_json
         path = config.get("DHCP_CONFIG_FILE", "") or ""
         result["reservation4"] = _ingest_source(
             conn, "reservation4", "reservation4_fingerprint", _fingerprint(path),
             lambda: parse_reservation4(load_json(path)),
         )
     if "reservation6" in kinds:
-        from .config_manager import load_json
         path = config.get("DHCP6_CONFIG_FILE", "") or ""
         result["reservation6"] = _ingest_source(
             conn, "reservation6", "reservation6_fingerprint", _fingerprint(path),
@@ -565,8 +688,8 @@ def _run_search(conn: sqlite3.Connection, table: str, columns: Sequence[str],
     }
 
 
-_LEASE4_SORT_COLUMNS = {"address": "address", "hostname": "hostname", "expire": "expire", "subnet_id": "subnet_id"}
-_LEASE6_SORT_COLUMNS = {"address": "address", "hostname": "hostname", "expire": "expire", "subnet_id": "subnet_id"}
+_LEASE4_SORT_COLUMNS = {"address": "address", "hostname": "hostname", "expire": "expire", "subnet": "subnet"}
+_LEASE6_SORT_COLUMNS = {"address": "address", "hostname": "hostname", "expire": "expire", "subnet": "subnet"}
 _RES4_SORT_COLUMNS = {"ip_address": "ip_address", "mac_address": "mac_address", "hostname": "hostname", "subnet": "subnet"}
 _RES6_SORT_COLUMNS = {"ip_address": "ip_address", "duid": "duid", "hostname": "hostname", "subnet": "subnet"}
 
@@ -595,8 +718,25 @@ def _status_clause(status: Optional[str], now: Optional[float] = None) -> Tuple[
     return ["t.state = 0 AND t.expire <= ?"], [now]  # "expired"
 
 
+def _expire_range_clause(start: Optional[float], end: Optional[float]) -> Tuple[List[str], List[Any]]:
+    """Calendar-style time window on a lease's expiry, the same shape as the
+    Logs page's time range filter (see routes/system.py's _log_search_params
+    and LOG_TIME_RANGES) -- preset-to-absolute conversion happens in the
+    route layer, this just applies the resulting bounds."""
+    where: List[str] = []
+    params: List[Any] = []
+    if start is not None:
+        where.append("t.expire >= ?")
+        params.append(int(start))
+    if end is not None:
+        where.append("t.expire <= ?")
+        params.append(int(end))
+    return where, params
+
+
 def search_lease4(conn: sqlite3.Connection, *, q: Optional[str] = None, mac: Optional[str] = None,
-                   ip: Optional[str] = None, status: Optional[str] = None, subnet_id: Optional[int] = None,
+                   ip: Optional[str] = None, status: Optional[str] = None, subnet: Optional[str] = None,
+                   start: Optional[float] = None, end: Optional[float] = None,
                    sort: str = "expire", direction: str = "desc",
                    limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Dict[str, Any]:
     joins: List[str] = []
@@ -621,20 +761,24 @@ def search_lease4(conn: sqlite3.Connection, *, q: Optional[str] = None, mac: Opt
     status_where, status_params = _status_clause(status)
     where.extend(status_where)
     params.extend(status_params)
-    if subnet_id:
-        where.append("t.subnet_id = ?")
-        params.append(int(subnet_id))
+    range_where, range_params = _expire_range_clause(start, end)
+    where.extend(range_where)
+    params.extend(range_params)
+    if subnet:
+        where.append("t.subnet = ?")
+        params.append(subnet)
 
     sort_column = _LEASE4_SORT_COLUMNS.get(sort, "expire")
     return _run_search(
         conn, "state_lease4",
-        ("address", "mac_address", "client_id", "hostname", "subnet_id", "valid_lifetime", "expire", "state"),
+        ("address", "mac_address", "client_id", "hostname", "subnet", "valid_lifetime", "expire", "state"),
         joins, where, params, sort_column, direction, limit, offset,
     )
 
 
 def search_lease6(conn: sqlite3.Connection, *, q: Optional[str] = None, duid: Optional[str] = None,
-                   ip: Optional[str] = None, status: Optional[str] = None, subnet_id: Optional[int] = None,
+                   ip: Optional[str] = None, status: Optional[str] = None, subnet: Optional[str] = None,
+                   start: Optional[float] = None, end: Optional[float] = None,
                    lease_type: Optional[int] = None, sort: str = "expire", direction: str = "desc",
                    limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Dict[str, Any]:
     joins: List[str] = []
@@ -666,9 +810,12 @@ def search_lease6(conn: sqlite3.Connection, *, q: Optional[str] = None, duid: Op
     status_where, status_params = _status_clause(status)
     where.extend(status_where)
     params.extend(status_params)
-    if subnet_id:
-        where.append("t.subnet_id = ?")
-        params.append(int(subnet_id))
+    range_where, range_params = _expire_range_clause(start, end)
+    where.extend(range_where)
+    params.extend(range_params)
+    if subnet:
+        where.append("t.subnet = ?")
+        params.append(subnet)
     if lease_type is not None:
         where.append("t.lease_type = ?")
         params.append(int(lease_type))
@@ -676,7 +823,7 @@ def search_lease6(conn: sqlite3.Connection, *, q: Optional[str] = None, duid: Op
     sort_column = _LEASE6_SORT_COLUMNS.get(sort, "expire")
     return _run_search(
         conn, "state_lease6",
-        ("address", "prefix_len", "duid", "hostname", "subnet_id", "pref_lifetime",
+        ("address", "prefix_len", "duid", "hostname", "subnet", "pref_lifetime",
          "valid_lifetime", "expire", "lease_type", "state"),
         joins, where, params, sort_column, direction, limit, offset,
     )
