@@ -31,6 +31,10 @@ def app(tmp_path):
     config_file.write_text(json.dumps({"Dhcp4": {"shared-networks": []}}))
     app.config["DHCP_CONFIG_FILE"] = str(config_file)
     app.config["DHCP_LEASES_FILE"] = str(tmp_path / "leases.csv")
+    # leases()/mac_reservations() ingest inline (see core/state_index.py) --
+    # without this override every test in this file would write to the real
+    # developer ./data directory instead of this test's own tmp_path.
+    app.config["STATE_INDEX_DB"] = str(tmp_path / "stateindex.db")
     yield app
 
 @pytest.fixture

@@ -113,6 +113,10 @@ def create_app(config_class: Any = Config, config_overrides: dict | None = None)
     from .core.log_index import start_background_indexer
     start_background_indexer(app)
 
+    # Same idea, for the Leases/Reservations pages' search index.
+    from .core.state_index import start_background_state_indexer
+    start_background_state_indexer(app)
+
     # Register blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)

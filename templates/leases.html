@@ -2,14 +2,72 @@
 
 {% block title %}IPv4 Leases - EZ-KEA{% endblock %}
 
+{% macro filter_qs(page=None, sort=None, direction=None) -%}
+q={{ search_query | urlencode }}&status={{ status | urlencode }}&subnet_id={{ subnet_id | urlencode }}&sort={{ (sort or sort_col) | urlencode }}&direction={{ (direction or dir_col) | urlencode }}{% if page %}&page={{ page }}{% endif %}
+{%- endmacro %}
+
+{% macro sort_link(column, label) -%}
+{% set next_dir = 'asc' if (sort_col == column and dir_col == 'desc') else 'desc' %}
+<a href="{{ url_for('main.dhcp4.leases') }}?{{ filter_qs(sort=column, direction=next_dir) }}" style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem;">
+  {{ label }}
+  {% if sort_col == column %}<i data-lucide="{{ 'chevron-down' if dir_col == 'desc' else 'chevron-up' }}" style="width: 14px; height: 14px;"></i>{% endif %}
+</a>
+{%- endmacro %}
+
+{% set sort_col = sort %}
+{% set dir_col = direction %}
+
 {% block content %}
 <div class="page-header">
-    <h1><i data-lucide="list"></i> Active IPv4 Leases</h1>
+    <h1><i data-lucide="list"></i> IPv4 Leases</h1>
 </div>
 
 <div class="card">
     <div class="card-header">
-        <h2><i data-lucide="activity"></i> Current Leases</h2>
+        <h2><i data-lucide="filter"></i> Search Leases</h2>
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('main.dhcp4.leases') }}" method="GET">
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <input type="text" class="form-control" name="q" style="flex: 1 1 18rem;"
+                    placeholder="MAC, IP address, or hostname" value="{{ search_query }}">
+                <select class="form-control" name="status" style="flex: 0 0 10rem;">
+                    <option value="">Any status</option>
+                    {% for value in statuses %}
+                    <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ value|capitalize }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" class="form-control" name="subnet_id" style="flex: 0 0 8rem;"
+                    placeholder="Subnet ID" value="{{ subnet_id }}">
+                <button type="submit" class="btn btn-primary" style="white-space: nowrap;">
+                    <i data-lucide="search"></i> Search
+                </button>
+                <a href="{{ url_for('main.dhcp4.leases') }}" class="btn btn-outline" style="white-space: nowrap;">
+                    <i data-lucide="rotate-ccw"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+        <h2 style="margin: 0;"><i data-lucide="activity"></i> Leases</h2>
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <span style="font-size: 0.85rem; color: var(--text-secondary);">
+                {% if total %}
+                    {{ '{:,}'.format((page - 1) * page_size + 1) }}-{{ '{:,}'.format((page - 1) * page_size + leases|length) }}
+                    of {{ '{:,}'.format(total) }} {{ 'lease' if total == 1 else 'leases' }}
+                {% else %}
+                    No matching leases
+                {% endif %}
+            </span>
+            {% if total %}
+            <a href="{{ url_for('main.dhcp4.leases_export') }}?{{ filter_qs() }}" class="btn btn-outline btn-sm">
+                <i data-lucide="download"></i> Export CSV
+            </a>
+            {% endif %}
+        </div>
     </div>
     <div class="card-body" style="padding: 0;">
         {% if leases %}
@@ -17,19 +75,18 @@
             <table>
                 <thead>
                     <tr>
-                        <th>IP Address</th>
-                        <th>MAC Address</th>
-                        <th>Hostname</th>
-                        <th>Expiration Time</th>
+                        <th>{{ sort_link('address', 'IP Address') }}</th>
+                        <th>Client</th>
+                        <th>{{ sort_link('hostname', 'Hostname') }}</th>
+                        <th>{{ sort_link('expire', 'Expiration Time') }}</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for lease in leases %}
                     <tr>
-                        <td style="font-family: monospace; font-size: 1.1em; color: var(--success-green);">{{
-                            lease.ip_address }}</td>
-                        <td style="font-family: monospace;">{{ lease.mac_address }}</td>
+                        <td style="font-family: monospace; font-size: 1.1em; color: var(--success-green);">{{ lease.address }}</td>
+                        <td style="font-family: monospace;">{{ lease.mac_address or '-' }}</td>
                         <td>
                             {% if lease.hostname %}
                             <span class="badge badge-success"
@@ -40,7 +97,17 @@
                             {% endif %}
                         </td>
                         <td>{{ lease.expiration_time }}</td>
-                        <td><span class="badge badge-success">Active</span></td>
+                        <td>
+                            {% if lease.status == 'active' %}
+                            <span class="badge badge-success">Active</span>
+                            {% elif lease.status == 'declined' %}
+                            <span class="badge badge-danger">Declined</span>
+                            {% elif lease.status == 'reclaimed' %}
+                            <span class="badge" style="background-color: rgba(255, 255, 255, 0.1);">Reclaimed</span>
+                            {% else %}
+                            <span class="badge" style="background-color: rgba(255, 255, 255, 0.1);">Expired</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -50,10 +117,36 @@
         <div style="text-align: center; padding: 4rem 2rem;">
             <i data-lucide="file-warning"
                 style="width: 64px; height: 64px; color: var(--text-secondary); opacity: 0.5; margin-bottom: 1rem;"></i>
-            <h2>No Active Leases</h2>
-            <p style="color: var(--text-secondary);">There are currently no active DHCP leases in the database.</p>
+            <h2>No Matching Leases</h2>
+            <p style="color: var(--text-secondary);">
+                {% if search_query or status or subnet_id %}
+                Nothing in the lease table matched these filters.
+                {% else %}
+                There are currently no DHCP leases on record.
+                {% endif %}
+            </p>
         </div>
         {% endif %}
     </div>
+    {% if total and (page > 1 or has_next) %}
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1.5rem; border-top: 1px solid var(--border);">
+        {% if page > 1 %}
+        <a href="{{ url_for('main.dhcp4.leases') }}?{{ filter_qs(page - 1) }}" class="btn btn-outline btn-sm">
+            <i data-lucide="chevron-left"></i> Previous
+        </a>
+        {% else %}<span></span>{% endif %}
+        <span style="font-size: 0.8rem; color: var(--text-secondary);">Page {{ '{:,}'.format(page) }}</span>
+        {% if has_next %}
+        <a href="{{ url_for('main.dhcp4.leases') }}?{{ filter_qs(page + 1) }}" class="btn btn-outline btn-sm">
+            Next <i data-lucide="chevron-right"></i>
+        </a>
+        {% else %}<span></span>{% endif %}
+    </div>
+    {% endif %}
 </div>
+
+<p style="color: var(--text-secondary); font-size: 0.8rem;">
+    Searches run against an index of the lease file that refreshes automatically in the background
+    (last refreshed {{ stats.last_ingest_text }}{% if stats.last_ingest %}, {{ '{:,}'.format(stats.lease4) }} leases indexed{% endif %}).
+</p>
 {% endblock %}
