@@ -10,6 +10,13 @@ reads and always backs it up first.
 
 ## [Unreleased]
 
+### Fixed
+
+- Adding a subnet to a config whose existing subnets have no explicit `id`
+  assigned ID 1 (a missing `id` was counted as 0), colliding with the ID Kea
+  had already assigned implicitly and recorded on every lease. New IDs now
+  start above every explicit and implicit ID, for both DHCPv4 and DHCPv6.
+
 ## [0.9.2] — 2026-08-02
 
 ### Fixed

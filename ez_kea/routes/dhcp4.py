@@ -312,15 +312,20 @@ def edit_subnet() -> Union[str, Response, Tuple[str, int]]:
 
 
 def _next_subnet_id(config: Dict[str, Any]) -> int:
-    """Return the next available subnet ID across all subnets."""
-    used = set()
+    """Return the next available subnet ID across all subnets.
+
+    Subnets with no explicit "id" still have one: Kea assigns it at load time
+    and stores it on every lease. Those implicit IDs never exceed the highest
+    explicit ID plus the number of ID-less subnets, so the next ID starts
+    above that bound rather than reusing (say) 1 and colliding with them.
+    """
     dhcp4 = config.get("Dhcp4", {})
-    for s in dhcp4.get("subnet4", []):
-        used.add(s.get("id", 0))
+    subnets = list(dhcp4.get("subnet4", []))
     for net in dhcp4.get("shared-networks", []):
-        for s in net.get("subnet4", []):
-            used.add(s.get("id", 0))
-    return max(used, default=0) + 1
+        subnets.extend(net.get("subnet4", []))
+    explicit = [s["id"] for s in subnets if isinstance(s.get("id"), int)]
+    implicit = len(subnets) - len(explicit)
+    return max(explicit, default=0) + implicit + 1
 
 def _find_reservation4(config: Dict[str, Any], hw_address: str, subnet: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """Locate a MAC reservation by hw-address within a specific subnet.

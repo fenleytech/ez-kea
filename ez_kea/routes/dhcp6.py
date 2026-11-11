@@ -49,14 +49,14 @@ def _next_subnet6_id(config: Dict[str, Any]) -> int:
     """Return the next available subnet6 ID. Kea keeps v4/v6 subnet-id
     spaces separate, so this only scans Dhcp6 — it must not be merged with
     dhcp4.py's _next_subnet_id()."""
-    used = set()
     dhcp6 = config.get("Dhcp6", {})
-    for s in dhcp6.get("subnet6", []):
-        used.add(s.get("id", 0))
+    subnets = list(dhcp6.get("subnet6", []))
     for net in dhcp6.get("shared-networks", []):
-        for s in net.get("subnet6", []):
-            used.add(s.get("id", 0))
-    return max(used, default=0) + 1
+        subnets.extend(net.get("subnet6", []))
+    # ID-less subnets get an implicit ID from Kea; see _next_subnet_id().
+    explicit = [s["id"] for s in subnets if isinstance(s.get("id"), int)]
+    implicit = len(subnets) - len(explicit)
+    return max(explicit, default=0) + implicit + 1
 
 
 @dhcp6_bp.route("/pools6")
