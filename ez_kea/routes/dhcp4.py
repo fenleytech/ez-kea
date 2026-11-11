@@ -6,6 +6,7 @@ from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_kea_config, with_config_lock
+from ..core.ha_manager import merged_pool_view
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_ipv4_address, has_overlap, return_available_ips, get_active_leases, sanitize_hostname
 from ..core import state_index
 from ..core.csv_export import stream_csv_response
@@ -258,7 +259,9 @@ def edit_subnet() -> Union[str, Response, Tuple[str, int]]:
         static_only = "pools" not in subnet_obj
         range_start, range_end = "", ""
         if subnet_obj.get("pools"):
-            pool_str = subnet_obj["pools"][0].get("pool", "")
+            # Join an HA load-balancing split back up: the operator edits the
+            # whole range and save_kea_config re-splits it.
+            pool_str = merged_pool_view(subnet_obj["pools"])[0].get("pool", "")
             if " - " in pool_str:
                 range_start, range_end = pool_str.split(" - ", 1)
 

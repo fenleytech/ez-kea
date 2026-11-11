@@ -34,6 +34,7 @@
     <div id="action-status" style="margin-top: 0.5rem;"></div>
 </div>
 
+{% include "apply_script.html" %}
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         const statusDiv = document.getElementById("action-status");
@@ -56,21 +57,7 @@
         });
 
         document.getElementById("applyConfigBtn").addEventListener("click", function () {
-            if (!confirm('Please confirm you want to reload the daemon.')) return;
-
-            statusDiv.innerHTML = "<span style='color: var(--text-secondary);'><i data-lucide='loader'></i> Applying...</span>";
-            lucide.createIcons();
-
-            fetch('{{ url_for("main.system.apply_config_version", version=dhcp_version) }}', { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
-                .then(r => r.json().then(data => ({ status: r.status, body: data })))
-                .then(res => {
-                    if (res.status === 200) {
-                        statusDiv.innerHTML = `<span style='color: var(--success-green);'><i data-lucide='check'></i> ${res.body.message}</span>`;
-                    } else {
-                        statusDiv.innerHTML = `<span style='color: var(--danger-red);'><i data-lucide='alert-triangle'></i> ${res.body.error}</span>`;
-                    }
-                    lucide.createIcons();
-                });
+            ezkApplyConfig('{{ url_for("main.system.apply_config_version", version=dhcp_version) }}', statusDiv);
         });
     });
 </script>

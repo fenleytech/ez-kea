@@ -26,6 +26,7 @@ from ..core.settings_manager import load_settings, save_settings
 from ..core.security import validate_kea_command, validate_log_file_path, InvalidKeaCommandError, InvalidLogPathError
 from ..core.kea_ctrl import send_command, find_unix_socket_path, ControlChannelError
 from ..core import state_index
+from ..core import ha_sync
 from ..core.ha_manager import get_ha_params
 
 system_bp = Blueprint('system', __name__)
@@ -477,14 +478,73 @@ def _reload_via_control_socket(version: str) -> Union[Response, Tuple[Response, 
     return jsonify({"message": "KEA service reloaded successfully!"})
 
 
+def _status_of(result: Union[Response, Tuple[Response, int]]) -> int:
+    return result[1] if isinstance(result, tuple) else getattr(result, "status_code", 200)
+
+
 def _apply_config_impl(version: str) -> Union[Response, Tuple[Response, int]]:
-    """Validate syntax and reload the Kea service for `version` with the current config."""
-    # Attempt syntax test first
+    """
+    Validate, reload this server, and push the config to every HA peer that
+    EZ-KEA manages (see core/ha_sync.py). Peers are config-tested and then
+    loaded (config-set) before this server reloads; if any peer fails, or
+    this server's reload fails, the peers go back to their previous config,
+    so the partners never end up running different configs. A peer that can't be
+    reached blocks the apply unless the request says `skip_unreachable=1`
+    (the UI asks first), so one dead partner never locks out changes here.
+    """
     test_result = _test_config_impl(version)
-    status_code = test_result[1] if isinstance(test_result, tuple) else getattr(test_result, 'status_code', 200)
-    if status_code != 200:
+    if _status_of(test_result) != 200:
         return test_result
 
+    dhcp_key = f"Dhcp{version}"
+    config_file = current_app.config["DHCP6_CONFIG_FILE" if version == "6" else "DHCP_CONFIG_FILE"]
+    config = load_json(config_file, default=_DEFAULT_KEA6_CONFIG if version == "6" else None)
+    ready, failed = ha_sync.preflight(config, dhcp_key)
+    refused = [f for f in failed if not f["unreachable"]]
+    unreachable = [f for f in failed if f["unreachable"]]
+    if refused:
+        return jsonify({
+            "error": "Nothing was applied. " + " ".join(f"{f['name']}: {f['error']}" for f in refused)
+        }), 409
+    skip = request.args.get("skip_unreachable") == "1" or request.form.get("skip_unreachable") == "1"
+    if unreachable and not skip:
+        names = ", ".join(f["name"] for f in unreachable)
+        return jsonify({
+            "error": f"Nothing was applied: HA peer {names} can't be reached. "
+                     + " ".join(f"{f['name']}: {f['error']}" for f in unreachable),
+            "peers_unreachable": [f["name"] for f in unreachable],
+        }), 409
+
+    staged, stage_error = ha_sync.stage(ready)
+    if stage_error:
+        return jsonify({"error": "Nothing was applied. " + stage_error}), 409
+
+    local = _apply_local(version)
+    if _status_of(local) != 200:
+        notes = ha_sync.rollback(staged)
+        if not notes:
+            return local
+        resp = local[0] if isinstance(local, tuple) else local
+        error = (resp.get_json(silent=True) or {}).get("error", "Reload failed.")
+        return jsonify({"error": f"{error} HA peers: " + "; ".join(notes) + "."}), _status_of(local)
+
+    done, errors = ha_sync.commit(staged, dhcp_key, config)
+    parts = ["KEA service reloaded successfully!"]
+    if done:
+        parts.append(f"Pushed to HA peer {', '.join(done)}.")
+    if unreachable:
+        parts.append(f"Not pushed to {', '.join(f['name'] for f in unreachable)} (unreachable); "
+                     f"Apply again once it is back.")
+    unmanaged = ha_sync.unmanaged_peers(config, dhcp_key)
+    if unmanaged:
+        parts.append(f"{', '.join(unmanaged)} is not managed by EZ-KEA; load its config by hand.")
+    if errors:
+        return jsonify({"error": "Applied here, but the push failed for " + "; ".join(errors)}), 502
+    return jsonify({"message": " ".join(parts)})
+
+
+def _apply_local(version: str) -> Union[Response, Tuple[Response, int]]:
+    """Reload this server's Kea with the strategy from Global Settings."""
     strategy = current_app.config.get("KEA_RELOAD_STRATEGY", "keactrl")
     if strategy == "control-socket":
         return _reload_via_control_socket(version)

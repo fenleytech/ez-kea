@@ -6,6 +6,7 @@ from flask_login import login_required
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, flash
 from werkzeug.wrappers import Response
 from ..core.config_manager import load_json, save_kea_config, with_config_lock, _DEFAULT_KEA6_CONFIG
+from ..core.ha_manager import merged_pool_view
 from ..core.validation import classify_network_address, validate_mac_address, validate_ip_range, validate_duid, has_overlap, return_available_ips, get_active_leases, get_active_leases6, unix_to_human_readable, sanitize_hostname
 from ..core import state_index
 from ..core.csv_export import stream_csv_response
@@ -332,13 +333,14 @@ def edit_subnet6() -> Union[str, Response, Tuple[str, int]]:
 
         pool_start, pool_end = "", ""
         if subnet_obj.get("pools"):
-            pool_str = subnet_obj["pools"][0].get("pool", "")
+            # HA load-balancing splits are joined back up for editing; see dhcp4.edit_subnet.
+            pool_str = merged_pool_view(subnet_obj["pools"])[0].get("pool", "")
             if " - " in pool_str:
                 pool_start, pool_end = pool_str.split(" - ", 1)
 
         pd_pool, pd_length = "", ""
         if subnet_obj.get("pd-pools"):
-            pd = subnet_obj["pd-pools"][0]
+            pd = merged_pool_view(subnet_obj["pd-pools"], "pd-pools")[0]
             prefix = pd.get("prefix", "")
             prefix_len = pd.get("prefix-len")
             pd_pool = f"{prefix}/{prefix_len}" if prefix and prefix_len is not None else prefix

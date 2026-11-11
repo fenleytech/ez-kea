@@ -69,7 +69,7 @@ def test_set_ha_config_preserves_other_hooks():
 def test_set_ha_config_replaces_existing_ha_entry():
     config = {"Dhcp4": {"hooks-libraries": [{"library": DEFAULT_HA_LIBRARY_PATH, "parameters": {"high-availability": [{"mode": "load-balancing"}]}}]}}
     set_ha_config(config, DEFAULT_HA_LIBRARY_PATH, VALID_HA_PARAMS, "Dhcp4")
-    assert len(config["Dhcp4"]["hooks-libraries"]) == 1
+    assert [h["library"].rsplit("/", 1)[-1] for h in config["Dhcp4"]["hooks-libraries"]] == ["libdhcp_lease_cmds.so", "libdhcp_ha.so"]
     assert get_ha_params(config, "Dhcp4")["mode"] == "hot-standby"
 
 

@@ -434,6 +434,26 @@ def prune_backups(config_file: str, backup_dir: str, keep: int) -> None:
             pass  # a backup we couldn't delete is not worth failing a config write over
 
 
+def _probe_pre3_kea() -> bool:
+    """True when the managed Kea is positively identified as older than 3.0 (see kea_version)."""
+    try:
+        from flask import current_app
+        kea_cmd = current_app.config.get("KEA_DHCP4_CMD", "")
+    except RuntimeError:  # outside an app context (scripts, some tests)
+        return False
+    from .kea_version import uses_legacy_control_socket
+    return bool(kea_cmd) and uses_legacy_control_socket(kea_cmd)
+
+
+def _flash_if_request(message: str, category: str) -> None:
+    try:
+        from flask import flash, has_request_context
+    except ImportError:  # pragma: no cover
+        return
+    if has_request_context():
+        flash(message, category)
+
+
 def save_kea_config(
     data: Dict[str, Any], file_path: str, backup_dir: str, keep_backups: int = 100
 ) -> None:
@@ -448,7 +468,16 @@ def save_kea_config(
     A failed backup aborts the write (BackupError) rather than proceeding
     without one -- an operator relying on that guarantee during a bad edit is
     exactly who gets hurt if we write anyway.
+
+    It is also the one place that keeps HA load-balancing pools split between
+    the two servers (ha_manager.sync_lb_pool_split), so a subnet added or
+    edited after HA was enabled gets split too, and switching away from
+    load-balancing joins the halves back up.
     """
+    from .ha_manager import sync_lb_pool_split
+    for warning in sync_lb_pool_split(data, _probe_pre3_kea):
+        _flash_if_request(warning, "warning")
+
     if os.path.isfile(file_path):
         try:
             copy_file(file_path, backup_dir)

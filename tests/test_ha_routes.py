@@ -59,14 +59,33 @@ def test_high_availability_page_get(client):
     assert b"High Availability" in response.data
 
 
+def test_check_live_status_buttons_fetch_real_urls(client):
+    """The buttons once fetched the endpoint *name* ('main.ha.api_ha_status'),
+    which 404s in a browser and showed only 'Request failed.'."""
+    html = client.get("/high-availability").get_data(as_text=True)
+    assert "checkHaStatus('/api/ha-status', 'ha4-status')" in html
+    assert "checkHaStatus('/api/ha-status6', 'ha6-status')" in html
+    assert "checkHaStatus('main." not in html
+
+
+def test_mode_select_keeps_peer_roles_in_sync(client):
+    """Switching Mode must remap the Role dropdowns (standby <-> secondary),
+    or the save is rejected by parse_ha_form's per-mode role check."""
+    html = client.get("/high-availability").get_data(as_text=True)
+    assert 'name="ha-mode" onchange="syncHaRoles(\'ha4\')"' in html
+    assert 'name="ha-mode" onchange="syncHaRoles(\'ha6\')"' in html
+    assert "function syncHaRoles(formId)" in html
+
+
 def test_save_ha_config_enables_v4(client, app):
     response = client.post("/save-ha-config", data=_ha_form())
     assert response.status_code == 302
 
     config = json.loads(open(app.config["DHCP_CONFIG_FILE"]).read())
     hooks = config["Dhcp4"]["hooks-libraries"]
-    assert len(hooks) == 1
-    ha_params = hooks[0]["parameters"]["high-availability"][0]
+    # HA cannot sync leases without lease_cmds, and lease_cmds must load first.
+    assert [h["library"].rsplit("/", 1)[-1] for h in hooks] == ["libdhcp_lease_cmds.so", "libdhcp_ha.so"]
+    ha_params = hooks[1]["parameters"]["high-availability"][0]
     assert ha_params["this-server-name"] == "server1"
     assert ha_params["mode"] == "hot-standby"
     assert len(ha_params["peers"]) == 2
@@ -82,12 +101,13 @@ def test_save_ha_config_rejects_invalid_and_flashes(client, app):
 def test_save_ha_config_disable_removes_hook(client, app):
     client.post("/save-ha-config", data=_ha_form())
     config = json.loads(open(app.config["DHCP_CONFIG_FILE"]).read())
-    assert len(config["Dhcp4"]["hooks-libraries"]) == 1
+    assert len(config["Dhcp4"]["hooks-libraries"]) == 2
 
     response = client.post("/save-ha-config", data={"ha-enabled": "off"})
     assert response.status_code == 302
     config = json.loads(open(app.config["DHCP_CONFIG_FILE"]).read())
-    assert config["Dhcp4"]["hooks-libraries"] == []
+    # The HA hook goes; lease_cmds stays (harmless alone, and other tooling uses it).
+    assert [h["library"].rsplit("/", 1)[-1] for h in config["Dhcp4"]["hooks-libraries"]] == ["libdhcp_lease_cmds.so"]
 
 
 def test_save_ha_config6_enables_v6(client, app):
@@ -95,8 +115,8 @@ def test_save_ha_config6_enables_v6(client, app):
     assert response.status_code == 302
     config = json.loads(open(app.config["DHCP6_CONFIG_FILE"]).read())
     hooks = config["Dhcp6"]["hooks-libraries"]
-    assert len(hooks) == 1
-    assert hooks[0]["parameters"]["high-availability"][0]["mode"] == "hot-standby"
+    assert [h["library"].rsplit("/", 1)[-1] for h in hooks] == ["libdhcp_lease_cmds.so", "libdhcp_ha.so"]
+    assert hooks[1]["parameters"]["high-availability"][0]["mode"] == "hot-standby"
 
 
 def test_save_ha_config_preserves_other_hooks(client, app):

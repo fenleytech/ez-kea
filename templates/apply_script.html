@@ -1,0 +1,43 @@
+{# Shared Apply Changes handler (config_buttons.html and the HA page). Apply also
+   pushes to managed HA peers; if one can't be reached the server refuses with
+   peers_unreachable, and we ask before applying without it. #}
+<script>
+if (typeof window.ezkApplyConfig !== 'function') {
+    window.ezkApplyConfig = function (url, statusDiv, onDone, skipUnreachable) {
+        var esc = function (v) { var d = document.createElement('div'); d.textContent = String(v); return d.innerHTML; };
+        var show = function (ok, text) {
+            statusDiv.innerHTML = "<span style='color: var(" + (ok ? "--success-green" : "--danger-red") + ");'><i data-lucide='"
+                + (ok ? "check" : "alert-triangle") + "'></i> " + esc(text) + "</span>";
+            lucide.createIcons();
+        };
+        if (!skipUnreachable && !confirm('Please confirm you want to reload the daemon.')) return;
+        var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        statusDiv.innerHTML = "<span style='color: var(--text-secondary);'><i data-lucide='loader'></i> Applying...</span>";
+        lucide.createIcons();
+        fetch(url + (skipUnreachable ? '?skip_unreachable=1' : ''), { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+            .then(function (r) {
+                return r.text().then(function (t) {
+                    var body;
+                    try { body = JSON.parse(t); } catch (e) { body = { error: 'HTTP ' + r.status + ' from ' + url }; }
+                    return { status: r.status, body: body };
+                });
+            })
+            .then(function (res) {
+                if (res.status === 200) {
+                    show(true, res.body.message);
+                } else if (res.body.peers_unreachable && !skipUnreachable) {
+                    show(false, res.body.error);
+                    if (confirm(res.body.error + '\n\nApply on this server anyway? '
+                            + res.body.peers_unreachable.join(', ') + ' will be out of sync until you Apply again with it back.')) {
+                        window.ezkApplyConfig(url, statusDiv, onDone, true);
+                        return;
+                    }
+                } else {
+                    show(false, res.body.error);
+                }
+                if (onDone) onDone();
+            })
+            .catch(function () { show(false, 'Request failed.'); });
+    };
+}
+</script>

@@ -12,6 +12,68 @@ reads and always backs it up first.
 
 ### Fixed
 
+High availability, found by running EZ-KEA's own HA output on two real Kea
+3.2.1 servers, reached both through a DHCP relay and directly on a shared
+segment. Every item below was reproduced there before the fix and passes
+there after it.
+
+- **HA configs EZ-KEA wrote never worked.** It loaded `libdhcp_ha.so` without
+  `libdhcp_lease_cmds.so`, so the first lease sync failed (`'lease4-get-page'
+  command not supported`) and both servers stayed in `syncing`/`waiting`,
+  answering no clients at all. EZ-KEA now loads `lease_cmds` (from the HA
+  library's directory unless it is already configured) and keeps the hook
+  order ISC requires: `lease_cmds` and `flex_id` before HA, forensic logging
+  after.
+- **Load-balancing could hand one address to two clients.** Pools were left
+  whole, so when the link between the servers dropped, both allocated from the
+  same range (8 duplicate addresses out of 30 clients in the lab). EZ-KEA now
+  splits every pool and DHCPv6 prefix pool in half with the `HA_<server>`
+  classes Kea uses for load-balancing, re-splits whenever a subnet is added or
+  edited, and joins the halves back when you leave load-balancing. Splits you
+  tuned by hand are left alone.
+- **A hostname in a peer URL broke the reload.** Kea's own config check
+  accepts it, then the HA hook refuses to load. Peer URLs must now be IP
+  addresses.
+- **Peer URLs were described as Control Agent URLs**, which don't exist on
+  Kea 3.2. EZ-KEA now writes the HA hook's `multi-threading` block with its own
+  dedicated listener (the peer URL, port 8001 by convention) and refuses a URL
+  whose port clashes with one of the server's HTTP control sockets.
+- `max-unacked-clients` defaulted to 0, which turns off the check that stops a
+  standby from taking over while its partner is still answering clients. It
+  now defaults to ISC's 10. Max Response Delay must exceed Heartbeat Delay,
+  and peer roles must fit the mode (hot-standby needs `primary` + `standby`,
+  load-balancing `primary` + `secondary`).
+- Saving the HA form dropped any HA setting it has no field for (TLS files,
+  basic auth, tuned threads, a second relationship). Those are now kept.
+- **Check Live Status always said "Request failed."** The buttons fetched the
+  route's internal name instead of its URL. They now show the server's HA
+  state, or the actual error (an unreachable control socket, an HTTP status).
+- Changing the HA Mode left the peer Role dropdowns as they were, so switching
+  hot-standby to load-balancing was rejected for the leftover `standby` role,
+  and a fresh form started with two `primary` peers. The dropdowns now follow
+  the mode: only that mode's roles are offered, `standby` and `secondary`
+  carry across a switch, and added peers default to `backup`. A role mismatch
+  is now one error that lists each peer's role, instead of two that read as if
+  one peer had to be both `standby` and `backup`.
+
+### Added
+
+- **HA peer config sync.** Apply Changes now pushes this server's config to
+  every HA partner, so nobody edits JSON on the second server. EZ-KEA talks to
+  each peer's own Kea control API (Kea 3.x serves it over HTTP/HTTPS from the
+  DHCP daemon; no Control Agent, SSH or second EZ-KEA). Each peer is set up
+  once with a generated script that installs its config, the API and its
+  credential files. After that, Apply tests the config on every peer, loads it
+  there, reloads this server, then saves it to each peer's config file. If a
+  peer can't load it, or this server's reload fails, the peers go back to
+  their previous config and nothing is applied. A peer keeps its own
+  interfaces, lease file, logging and control sockets. The HA page shows each
+  peer as in sync, out of sync (including changes made outside EZ-KEA),
+  unreachable or not managed. An unreachable peer stops Apply until you
+  confirm applying on this server only.
+- **Config file** download per peer for partners EZ-KEA doesn't manage: this
+  server's config with only `this-server-name` changed.
+
 - Adding a subnet to a config whose existing subnets have no explicit `id`
   assigned ID 1 (a missing `id` was counted as 0), colliding with the ID Kea
   had already assigned implicitly and recorded on every lease. New IDs now

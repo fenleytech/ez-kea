@@ -64,7 +64,7 @@
                         {% for pool in subnet['pools'] %}
                         <span class="badge badge-info"
                             style="background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">
-                            {{ pool.pool }}
+                            {{ pool.pool }}{% set _c = pool.get('client-classes') or ([pool['client-class']] if pool.get('client-class') else []) %}{% if _c %} <small style="opacity:.75;">({{ _c|join(', ') }})</small>{% endif %}
                         </span>
                         <br>
                         {% endfor %}
@@ -80,7 +80,7 @@
                         {% for pd in subnet['pd-pools'] %}
                         <span class="badge badge-success"
                             style="background-color: rgba(16, 185, 129, 0.1); color: var(--success-green); border-color: rgba(16, 185, 129, 0.2);">
-                            {{ pd.prefix }} (Delegated length: /{{ pd['delegated-len'] }})
+                            {{ pd.prefix }}/{{ pd['prefix-len'] }} (Delegated length: /{{ pd['delegated-len'] }}){% set _c = pd.get('client-classes') or ([pd['client-class']] if pd.get('client-class') else []) %}{% if _c %} <small style="opacity:.75;">({{ _c|join(', ') }})</small>{% endif %}
                         </span>
                         <br>
                         {% endfor %}
@@ -160,7 +160,7 @@
                         {% for pool in subnet['pools'] %}
                         <span class="badge badge-info"
                             style="background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2);">
-                            {{ pool.pool }}
+                            {{ pool.pool }}{% set _c = pool.get('client-classes') or ([pool['client-class']] if pool.get('client-class') else []) %}{% if _c %} <small style="opacity:.75;">({{ _c|join(', ') }})</small>{% endif %}
                         </span>
                         <br>
                         {% endfor %}
@@ -176,7 +176,7 @@
                         {% for pd in subnet['pd-pools'] %}
                         <span class="badge badge-success"
                             style="background-color: rgba(16, 185, 129, 0.1); color: var(--success-green); border-color: rgba(16, 185, 129, 0.2);">
-                            {{ pd.prefix }} (Delegated length: /{{ pd['delegated-len'] }})
+                            {{ pd.prefix }}/{{ pd['prefix-len'] }} (Delegated length: /{{ pd['delegated-len'] }}){% set _c = pd.get('client-classes') or ([pd['client-class']] if pd.get('client-class') else []) %}{% if _c %} <small style="opacity:.75;">({{ _c|join(', ') }})</small>{% endif %}
                         </span>
                         <br>
                         {% endfor %}

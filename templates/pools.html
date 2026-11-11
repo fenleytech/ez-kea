@@ -99,7 +99,7 @@
             {% for pool in subnet.pools %}
             <span class="badge badge-success"
               style="background-color: rgba(27, 161, 216, 0.1); color: var(--primary-blue); border-color: rgba(27, 161, 216, 0.2);">
-              {{ pool.pool }}
+              {{ pool.pool }}{% set _c = pool.get('client-classes') or ([pool['client-class']] if pool.get('client-class') else []) %}{% if _c %} <small style="opacity:.75;">({{ _c|join(', ') }})</small>{% endif %}
             </span>
             {% endfor %}
             {% else %}
@@ -179,7 +179,7 @@
           <div>
             <span class="form-label">Pool</span>
             {% if subnet.pools %}{% for p in subnet.pools %}
-            <span class="badge" style="background:rgba(27, 161, 216,.1);color:var(--primary-blue);">{{ p.pool }}</span>
+            <span class="badge" style="background:rgba(27, 161, 216,.1);color:var(--primary-blue);">{{ p.pool }}{% set _c = p.get('client-classes') or ([p['client-class']] if p.get('client-class') else []) %}{% if _c %} <small style="opacity:.75;">({{ _c|join(', ') }})</small>{% endif %}</span>
             {% endfor %}{% else %}
             <span class="badge" style="background:rgba(255, 255, 255,.1);">Static Only</span>
             {% endif %}

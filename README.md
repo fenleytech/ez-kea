@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="PolyForm Noncommercial License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/kea-2.x%20%7C%203.x-blue.svg" alt="Supports ISC Kea 2.x and 3.x">
-  <a href="#development"><img src="https://img.shields.io/badge/tests-479-brightgreen.svg" alt="479 tests"></a>
+  <a href="#development"><img src="https://img.shields.io/badge/tests-539-brightgreen.svg" alt="539 tests"></a>
   <a href="https://demo.ezkea.com"><img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="Live demo"></a>
 </p>
 
@@ -139,7 +139,7 @@ One Python process (waitress serving a Flask app) on the same host as Kea.
 - **DHCPv4 and DHCPv6** — shared networks, standalone subnets, address pools, and per-subnet DHCP options for both families. Subnets and shared networks are created, edited in place, and deleted through the UI (one address pool each per subnet). A subnet's CIDR is locked once created, but its gateway, pool range, and static-only toggle are editable; a shared network's name can be renamed. DHCP options are editable in place.
 - **Prefix delegation** — `pd-pools` with a delegated length, validated against the pool's own prefix, so downstream routers and CPE get a block rather than a single address.
 - **Reservations** — MAC-based for DHCPv4; DUID-based for DHCPv6, covering fixed addresses, delegated prefixes, or both on one reservation. Editable in place (MAC/DUID, IP, and hostname; the subnet is locked). The list pages have free-text search, a subnet CIDR filter, sortable columns, CSV export, and pagination.
-- **High availability** — writes and edits Kea's `libdhcp_ha.so` hook for hot-standby, load-balancing or passive-backup, with the peer list, roles and timers as fields and the peer set validated before saving. A heartbeat button reads current peer state back off the daemon's control socket. EZ-KEA configures HA and reads its status; it does not drive failover, and the Control Agent each peer talks to is out of scope.
+- **High availability** — writes Kea's `libdhcp_ha.so` hook (with the `libdhcp_lease_cmds.so` it depends on) for hot-standby, load-balancing or passive-backup, using the hook's own dedicated HTTP listener, so no Control Agent is needed. Peers, roles and timers are form fields, validated before saving. In load-balancing mode every pool is split between the two servers and kept split as subnets change. Apply pushes the config to the partner over Kea's own control API (one-time setup script per peer, rollback if a peer can't load it, in-sync status per peer), and a heartbeat button reads live peer state off the daemon's control socket. Tested end to end on two Kea 3.2 servers, both relayed and on a shared segment. EZ-KEA configures HA and reads its status; it does not drive failover.
 - **Historical log search** — a background thread indexes your Kea logs into SQLite (FTS5 where available), including rotated and gzipped archives, and survives rotation by inode change, truncation or `copytruncate`. Search by MAC (any spelling, including inside a client-id or DUID), IPv4, IPv6, CIDR range, or free text, filtered by severity, address family and time range. Results export to CSV and every search is a linkable URL. Retention defaults to 365 days.
 - **Leases** — active DHCPv4 and DHCPv6 lease tables read from Kea's memfile CSV, with free-text search (MAC/IP/hostname, or DUID/IPv6/hostname for v6), a subnet CIDR filter, a status filter, an expiration-timeframe filter (presets like "expiring in the next 24 hours" plus a custom date range), sortable columns, CSV export, and pagination.
 - **Validation, backup and restore** — overlap and range checks in the forms, a syntax check against Kea's own binary, automatic pre-write backups, and restore from the UI.
@@ -220,7 +220,7 @@ Tagged releases are on the [Releases page](https://github.com/fenleytech/ez-kea/
 
 ## Development
 
-**479 unit and route tests**, running with no Kea install and no network access:
+**539 unit and route tests**, running with no Kea install and no network access:
 
 ```bash
 pip install -r requirements.txt
