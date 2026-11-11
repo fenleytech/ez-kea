@@ -16,6 +16,10 @@ reads and always backs it up first.
   assigned ID 1 (a missing `id` was counted as 0), colliding with the ID Kea
   had already assigned implicitly and recorded on every lease. New IDs now
   start above every explicit and implicit ID, for both DHCPv4 and DHCPv6.
+- The homepage "Active Leases" card counted every address in the lease file,
+  expired and reclaimed included, so a long-running install could show 149
+  "active" leases with 14 actually live. It now counts only unexpired, active
+  leases, the same definition the pool utilization bars already used.
 
 ## [0.9.2] — 2026-08-02
 

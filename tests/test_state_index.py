@@ -355,6 +355,14 @@ def test_index_stats_counts_rows(populated):
     assert stats["last_ingest"] is not None
 
 
+def test_active_lease_counts_excludes_expired_and_declined(populated):
+    """The homepage "Active Leases" total. populated holds three lease4 rows
+    (active, expired, declined); index_stats counts all three, this counts
+    only the one actually holding an address."""
+    assert si.index_stats(populated)["lease4"] == 3
+    assert si.active_lease_counts(populated) == {"lease4": 1, "lease6": 0}
+
+
 def test_active_lease_counts_by_subnet_excludes_expired_and_declined(populated):
     """Only "active-host" (state 0, not yet expired) should count — the
     homepage's per-pool utilization bars would otherwise inflate usage with

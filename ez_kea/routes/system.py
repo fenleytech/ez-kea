@@ -306,6 +306,7 @@ def index() -> str:
     conn = state_index.connect(current_app.config["STATE_INDEX_DB"])
     try:
         lease_stats = state_index.index_stats(conn)
+        active_leases = state_index.active_lease_counts(conn)
         lease_counts4 = state_index.active_lease_counts_by_subnet(conn, "lease4")
         lease_counts6 = state_index.active_lease_counts_by_subnet(conn, "lease6")
     finally:
@@ -316,8 +317,8 @@ def index() -> str:
 
     return render_template(
         "index.html",
-        lease4=lease_stats.get("lease4", 0),
-        lease6=lease_stats.get("lease6", 0),
+        lease4=active_leases["lease4"],
+        lease6=active_leases["lease6"],
         reservation4=lease_stats.get("reservation4", 0),
         reservation6=lease_stats.get("reservation6", 0),
         subnet4=_count_subnets(config4, "Dhcp4", "subnet4"),

@@ -1023,6 +1023,30 @@ def test_index_active_lease_counts_flow_into_pool_utilization(dashboard_client, 
     assert "10.0%" in response.get_data(as_text=True)  # 1 of 10
 
 
+def test_index_active_leases_card_counts_only_active(dashboard_client, dashboard_app):
+    """The "Active Leases" card must not count every address in the lease
+    file. A long-lived memfile holds expired and reclaimed leases too (found
+    on a real install showing 149 "active" with 14 actually live)."""
+    import re
+    now = int(time.time())
+    conn = state_index_connect(dashboard_app.config["STATE_INDEX_DB"])
+    conn.executemany(
+        "INSERT INTO state_lease4 (id, address, subnet, state, expire) VALUES (?, ?, '10.0.0.0/24', ?, ?)",
+        [
+            (1, "10.0.0.10", 0, now + 3600),   # active
+            (2, "10.0.0.11", 0, now - 3600),   # expired
+            (3, "10.0.0.12", 2, now - 3600),   # expired-reclaimed
+            (4, "10.0.0.13", 1, now + 3600),   # declined
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    body = dashboard_client.get("/").get_data(as_text=True)
+    values = re.findall(r'Active Leases</div>\s*<div class="stat-value">([^<]*)</div>', body)
+    assert values == ["1", "0"]  # IPv4 card, IPv6 card
+
+
 def test_index_shows_no_pools_configured_state(dashboard_client):
     """The fixture's default config has subnets but no pools at all — the
     dashboard must show the neutral empty state, not a 0/0 crash."""

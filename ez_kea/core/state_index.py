@@ -944,6 +944,23 @@ def index_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     return stats
 
 
+def active_lease_counts(conn: sqlite3.Connection, now: Optional[float] = None) -> Dict[str, int]:
+    """Active lease totals per family, for the homepage's "Active Leases"
+    card. Same definition of active as active_lease_counts_by_subnet (state 0,
+    not yet expired). index_stats() row counts are not this: between LFC runs
+    (or with LFC off) the table holds every address Kea has ever handed out,
+    expired and reclaimed included, which on a long-lived install is many
+    times the live count. Prefix delegations count here: each is a lease."""
+    now = int(now if now is not None else time.time())
+    counts: Dict[str, int] = {}
+    for kind in ("lease4", "lease6"):
+        row = conn.execute(
+            f"SELECT COUNT(*) AS n FROM {_TABLE_NAMES[kind]} WHERE state = 0 AND expire > ?", (now,)
+        ).fetchone()
+        counts[kind] = int(row["n"] or 0)
+    return counts
+
+
 def active_lease_counts_by_subnet(conn: sqlite3.Connection, kind: str, now: Optional[float] = None) -> Dict[str, int]:
     """Active lease counts grouped by subnet CIDR, for the homepage's
     per-subnet pool utilization bars. `kind` is "lease4" or "lease6"; lease6
