@@ -32,18 +32,16 @@ changed since the last pass.
 
 One correctness note: Kea's memfile backend appends a new CSV row on every
 lease transaction between LFC compaction runs, so the same address can
-appear more than once in the file with different states. The old
-get_active_leases()/get_active_leases6() in core/validation.py dedup by
-*first* occurrence, which -- between compactions -- can show a stale row for
-an address that has since changed state. This index dedups by *last*
-occurrence instead, matching what Kea's own compaction converges to.
+appear more than once with different states, and after an LFC run most
+leases live in the `.2` file rather than the main one. Lease sources are
+read across the whole file set in Kea's load order (core/lease_files.py)
+and dedup by *last* occurrence, matching what Kea itself loads.
 
 Reservations are the one source EZ-KEA itself writes (save_kea_config, via
 the new/delete/edit reservation routes), so those routes call reindex_now()
 right after saving -- otherwise an operator's own edit would look stale on
 the very page they just used, up to STATE_INDEX_INTERVAL seconds later.
 """
-import csv
 import ipaddress
 import os
 import sqlite3
@@ -52,6 +50,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .lease_files import fingerprint as lease_fingerprint, iter_lease_rows
 from .log_index import classify_term, normalize_mac, normalize_mac_prefix
 
 DEFAULT_PAGE_SIZE = 100
@@ -306,7 +305,7 @@ def _subnet_id_map(config: Dict[str, Any], dhcp_key: str, subnet_key: str) -> Di
 
 
 def parse_lease4(path: str, subnet_map: Optional[Dict[int, str]] = None) -> List[Dict[str, Any]]:
-    """Every row currently in the lease4 CSV, one per address, keeping the
+    """Every address in the lease4 store (main CSV plus LFC files), keeping the
     *last* occurrence (see module docstring for why that's the correct
     choice between LFC compaction passes).
 
@@ -317,98 +316,90 @@ def parse_lease4(path: str, subnet_map: Optional[Dict[int, str]] = None) -> List
     """
     subnet_map = subnet_map or {}
     by_address: "Dict[str, Dict[str, Any]]" = {}
-    try:
-        with open(path, "r", newline="") as handle:
-            for row in csv.DictReader(handle):
-                address = row.get("address")
-                if not address:
-                    continue
-                try:
-                    expire = int(row.get("expire") or 0)
-                except (TypeError, ValueError):
-                    continue
-                try:
-                    state = int(row.get("state") or 0)
-                except (TypeError, ValueError):
-                    state = 0
-                try:
-                    subnet_id = int(row.get("subnet_id") or 0) or None
-                except (TypeError, ValueError):
-                    subnet_id = None
-                try:
-                    valid_lifetime = int(row.get("valid_lifetime") or 0)
-                except (TypeError, ValueError):
-                    valid_lifetime = None
-                by_address[address] = {
-                    "address": address,
-                    "mac_address": (row.get("hwaddr") or "").lower() or None,
-                    "client_id": row.get("client_id") or None,
-                    "hostname": row.get("hostname") or None,
-                    "subnet_id": subnet_id,
-                    "subnet": subnet_map.get(subnet_id),
-                    "valid_lifetime": valid_lifetime,
-                    "expire": expire,
-                    "state": state,
-                    "pool_id": row.get("pool_id") or None,
-                }
-    except FileNotFoundError:
-        return []
+    for row in iter_lease_rows(path):
+        address = row.get("address")
+        if not address:
+            continue
+        try:
+            expire = int(row.get("expire") or 0)
+        except (TypeError, ValueError):
+            continue
+        try:
+            state = int(row.get("state") or 0)
+        except (TypeError, ValueError):
+            state = 0
+        try:
+            subnet_id = int(row.get("subnet_id") or 0) or None
+        except (TypeError, ValueError):
+            subnet_id = None
+        try:
+            valid_lifetime = int(row.get("valid_lifetime") or 0)
+        except (TypeError, ValueError):
+            valid_lifetime = None
+        by_address[address] = {
+            "address": address,
+            "mac_address": (row.get("hwaddr") or "").lower() or None,
+            "client_id": row.get("client_id") or None,
+            "hostname": row.get("hostname") or None,
+            "subnet_id": subnet_id,
+            "subnet": subnet_map.get(subnet_id),
+            "valid_lifetime": valid_lifetime,
+            "expire": expire,
+            "state": state,
+            "pool_id": row.get("pool_id") or None,
+        }
     return list(by_address.values())
 
 
 def parse_lease6(path: str, subnet_map: Optional[Dict[int, str]] = None) -> List[Dict[str, Any]]:
-    """Every row currently in the lease6 CSV, one per address, last
+    """Every address in the lease6 store (main CSV plus LFC files), last
     occurrence wins. See parse_lease4 for why subnet_id is resolved to the
     actual subnet CIDR here rather than left as Kea's internal number."""
     subnet_map = subnet_map or {}
     by_address: "Dict[str, Dict[str, Any]]" = {}
-    try:
-        with open(path, "r", newline="") as handle:
-            for row in csv.DictReader(handle):
-                address = row.get("address")
-                if not address:
-                    continue
-                try:
-                    expire = int(row.get("expire") or 0)
-                except (TypeError, ValueError):
-                    continue
-                try:
-                    state = int(row.get("state") or 0)
-                except (TypeError, ValueError):
-                    state = 0
-                try:
-                    subnet_id = int(row.get("subnet_id") or 0) or None
-                except (TypeError, ValueError):
-                    subnet_id = None
-                try:
-                    lease_type = int(row.get("lease_type") or 0)
-                except (TypeError, ValueError):
-                    lease_type = 0
-                try:
-                    iaid = int(row.get("iaid") or 0) or None
-                except (TypeError, ValueError):
-                    iaid = None
-                try:
-                    prefix_len = int(row.get("prefix_len") or 0) or None
-                except (TypeError, ValueError):
-                    prefix_len = None
-                by_address[address] = {
-                    "address": address,
-                    "prefix_len": prefix_len if lease_type == 2 else None,
-                    "duid": (row.get("duid") or "").lower() or None,
-                    "hostname": row.get("hostname") or None,
-                    "subnet_id": subnet_id,
-                    "subnet": subnet_map.get(subnet_id),
-                    "pref_lifetime": row.get("pref_lifetime") or None,
-                    "valid_lifetime": row.get("valid_lifetime") or None,
-                    "expire": expire,
-                    "lease_type": lease_type,
-                    "iaid": iaid,
-                    "state": state,
-                    "pool_id": row.get("pool_id") or None,
-                }
-    except FileNotFoundError:
-        return []
+    for row in iter_lease_rows(path):
+        address = row.get("address")
+        if not address:
+            continue
+        try:
+            expire = int(row.get("expire") or 0)
+        except (TypeError, ValueError):
+            continue
+        try:
+            state = int(row.get("state") or 0)
+        except (TypeError, ValueError):
+            state = 0
+        try:
+            subnet_id = int(row.get("subnet_id") or 0) or None
+        except (TypeError, ValueError):
+            subnet_id = None
+        try:
+            lease_type = int(row.get("lease_type") or 0)
+        except (TypeError, ValueError):
+            lease_type = 0
+        try:
+            iaid = int(row.get("iaid") or 0) or None
+        except (TypeError, ValueError):
+            iaid = None
+        try:
+            prefix_len = int(row.get("prefix_len") or 0) or None
+        except (TypeError, ValueError):
+            prefix_len = None
+        by_address[address] = {
+            "address": address,
+            "prefix_len": prefix_len if lease_type == 2 else None,
+            "duid": (row.get("duid") or "").lower() or None,
+            "hostname": row.get("hostname") or None,
+            "subnet_id": subnet_id,
+            "subnet": subnet_map.get(subnet_id),
+            "pref_lifetime": row.get("pref_lifetime") or None,
+            "valid_lifetime": row.get("valid_lifetime") or None,
+            "expire": expire,
+            "lease_type": lease_type,
+            "iaid": iaid,
+            "state": state,
+            "pool_id": row.get("pool_id") or None,
+        }
     return list(by_address.values())
 
 
@@ -572,7 +563,7 @@ def ingest_all(config: Dict[str, Any], conn: sqlite3.Connection, kinds: Optional
         # subnet can be added/removed) without the lease file itself
         # changing, and that must still trigger a reingest since lease rows
         # carry the resolved CIDR, not just Kea's internal subnet_id.
-        fingerprint = f"{_fingerprint(path)}|{_fingerprint(config_path)}"
+        fingerprint = f"{lease_fingerprint(path)}|{_fingerprint(config_path)}"
         result["lease4"] = _ingest_source(
             conn, "lease4", "lease4_fingerprint", fingerprint,
             lambda: parse_lease4(path, _subnet_id_map(load_json(config_path), "Dhcp4", "subnet4")),
@@ -580,7 +571,7 @@ def ingest_all(config: Dict[str, Any], conn: sqlite3.Connection, kinds: Optional
     if "lease6" in kinds:
         path = config.get("DHCP6_LEASES_FILE", "") or ""
         config_path = config.get("DHCP6_CONFIG_FILE", "") or ""
-        fingerprint = f"{_fingerprint(path)}|{_fingerprint(config_path)}"
+        fingerprint = f"{lease_fingerprint(path)}|{_fingerprint(config_path)}"
         result["lease6"] = _ingest_source(
             conn, "lease6", "lease6_fingerprint", fingerprint,
             lambda: parse_lease6(path, _subnet_id_map(load_json(config_path, default=_DEFAULT_KEA6_CONFIG), "Dhcp6", "subnet6")),

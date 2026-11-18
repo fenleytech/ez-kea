@@ -6,8 +6,9 @@ from ipaddress import IPv4Network
 import re
 import warnings
 import time
-import csv
 from typing import Any, Dict, List, Set, Union
+
+from .lease_files import iter_lease_rows
 
 def classify_network_address(address: str) -> int:
     """
@@ -153,37 +154,48 @@ def has_overlap(new_subnet: str, data: Dict[str, Any], prefix: str = "Dhcp4") ->
                      continue
     return False
 
+def _latest_lease_rows(leases_file: str) -> Dict[str, Dict[str, Any]]:
+    """The newest row per address across Kea's whole lease store (the main
+    CSV plus the LFC files, see core/lease_files.py), with `expire` and
+    `state` parsed. Rows with a malformed `expire` (e.g. from a truncated
+    disk-full write) are skipped instead of crashing the page."""
+    latest: Dict[str, Dict[str, Any]] = {}
+    for row in iter_lease_rows(leases_file):
+        address = row.get("address")
+        if not address:
+            continue
+        try:
+            expire = int(row.get("expire", 0))
+        except (ValueError, TypeError):
+            continue
+        try:
+            state = int(row.get("state") or 0)
+        except (ValueError, TypeError):
+            state = 0
+        latest[address] = {"row": row, "expire": expire, "state": state}
+    return latest
+
+
 def get_active_leases(leases_file: str) -> List[Dict[str, Any]]:
-    """Return a list of active DHCP leases parsed from the Kea leases CSV."""
-    active_leases = []
-    seen_ips = set()
+    """Return the active DHCP leases (state 0, not yet expired) in Kea's
+    lease4 store. The newest row per address wins, as in Kea itself: a
+    lease that was renewed, released or reclaimed is judged by its last
+    row, not its first."""
     current_time = int(time.time())
-    
-    try:
-        with open(leases_file, "r") as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                try:
-                    expiration_time = int(row.get("expire", 0))
-                except (ValueError, TypeError):
-                    # Malformed/corrupted expire field (e.g. from a truncated
-                    # disk-full write) — skip this row instead of crashing
-                    # the whole leases list.
-                    continue
-                address = row.get("address")
-                if expiration_time > current_time and address not in seen_ips:
-                    seen_ips.add(address)
-                    active_leases.append({
-                        "ip_address": address,
-                        "mac_address": row.get("hwaddr"),
-                        # Hostnames here come straight from whatever the DHCP client
-                        # sent in its hostname option — sanitize the same way a
-                        # human-typed hostname is sanitized.
-                        "hostname": sanitize_hostname(row.get("hostname") or ""),
-                        "expire": expiration_time
-                    })
-    except FileNotFoundError:
-        pass
+    active_leases = []
+    for address, lease in _latest_lease_rows(leases_file).items():
+        if lease["state"] != 0 or lease["expire"] <= current_time:
+            continue
+        row = lease["row"]
+        active_leases.append({
+            "ip_address": address,
+            "mac_address": row.get("hwaddr"),
+            # Hostnames here come straight from whatever the DHCP client
+            # sent in its hostname option, so sanitize the same way a
+            # human-typed hostname is sanitized.
+            "hostname": sanitize_hostname(row.get("hostname") or ""),
+            "expire": lease["expire"],
+        })
     return active_leases
 
 # Kea's lease6 memfile CSV "lease_type" column: 0=IA_NA, 1=IA_TA, 2=IA_PD.
@@ -200,34 +212,21 @@ def get_active_leases6(leases_file: str) -> List[Dict[str, Any]]:
     host address, in `address`) from IA_PD (a delegated prefix, whose first
     address is in `address` with its length in `prefix_len`).
     """
-    active_leases = []
-    seen_addresses = set()
     current_time = int(time.time())
-
-    try:
-        with open(leases_file, "r") as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                try:
-                    expiration_time = int(row.get("expire", 0))
-                except (ValueError, TypeError):
-                    # Malformed/corrupted expire field — skip this row
-                    # instead of crashing the whole leases list.
-                    continue
-                address = row.get("address")
-                if expiration_time > current_time and address not in seen_addresses:
-                    seen_addresses.add(address)
-                    lease_type_label = _LEASE6_TYPE_LABELS.get(row.get("lease_type", "0"), "IA_NA")
-                    active_leases.append({
-                        "address": address,
-                        "prefix_len": row.get("prefix_len") if lease_type_label == "IA_PD" else None,
-                        "duid": row.get("duid"),
-                        "hostname": sanitize_hostname(row.get("hostname") or ""),
-                        "expire": expiration_time,
-                        "lease_type": lease_type_label,
-                    })
-    except FileNotFoundError:
-        pass
+    active_leases = []
+    for address, lease in _latest_lease_rows(leases_file).items():
+        if lease["state"] != 0 or lease["expire"] <= current_time:
+            continue
+        row = lease["row"]
+        lease_type_label = _LEASE6_TYPE_LABELS.get(row.get("lease_type", "0"), "IA_NA")
+        active_leases.append({
+            "address": address,
+            "prefix_len": row.get("prefix_len") if lease_type_label == "IA_PD" else None,
+            "duid": row.get("duid"),
+            "hostname": sanitize_hostname(row.get("hostname") or ""),
+            "expire": lease["expire"],
+            "lease_type": lease_type_label,
+        })
     return active_leases
 
 def _iter_subnet4_lists(config_data: Dict[str, Any]) -> List[List[Dict[str, Any]]]:
@@ -248,7 +247,13 @@ def return_available_ips(config_data: Dict[str, Any], leases_file: str) -> Dict[
     inside shared-networks."""
     subnet_data: Dict[str, List[str]] = {}
     reserved_ips = set()
-    active_leases_ips = set(lease['ip_address'] for lease in get_active_leases(leases_file))
+    # Any address whose newest row is unexpired is taken, declined ones
+    # included (Kea holds those for the decline probation period).
+    now = int(time.time())
+    active_leases_ips = {
+        address for address, lease in _latest_lease_rows(leases_file).items()
+        if lease["expire"] > now and lease["state"] != 2
+    }
 
     if "Dhcp4" not in config_data:
          return subnet_data

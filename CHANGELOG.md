@@ -56,6 +56,18 @@ there after it.
   is now one error that lists each peer's role, instead of two that read as if
   one peer had to be both `standby` and `backup`.
 
+Leases:
+
+- **Active lease count dropped to about 0 every hour.** When Kea's lease file
+  cleanup runs (`lfc-interval`), it moves the leases from `kea-leases4.csv`
+  into `kea-leases4.csv.2` and restarts the main file empty. EZ-KEA read only
+  the main file, so the dashboard, the Leases pages and search showed almost
+  no leases until clients renewed. EZ-KEA now reads the whole lease store
+  (`.completed`, or `.2` then `.1`, then the main file) in the order Kea
+  loads it. A lease's newest row now decides its state, so a released lease
+  no longer counts as active, and a declined address is no longer offered as
+  free for a reservation.
+
 ### Added
 
 - **HA peer config sync.** Apply Changes now pushes this server's config to
